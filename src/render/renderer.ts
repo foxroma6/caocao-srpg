@@ -10,6 +10,11 @@ const TERRAIN_COLOR: Record<Terrain, string> = {
   fort: "#9c8f7a",
 };
 
+export interface Highlight {
+  cells: Set<string>;
+  color: string;
+}
+
 export interface FloatText {
   x: number;
   y: number;
@@ -29,8 +34,7 @@ export class Renderer {
 
   draw(
     units: Unit[],
-    moveRange: Set<string> | null,
-    attackRange: Set<string> | null,
+    highlights: Highlight[],
     selected: Unit | null,
     cursor: { x: number; y: number } | null,
     floats: FloatText[]
@@ -44,7 +48,6 @@ export class Renderer {
         const t = terrainAt(stage, x, y);
         ctx.fillStyle = TERRAIN_COLOR[t];
         ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
-        // 지형 장식
         if (t === "forest") this.deco(x, y, "▲", "#2e5424");
         if (t === "mountain") this.deco(x, y, "⛰", "#6b5d49");
         if (t === "fort") this.deco(x, y, "🏯", "");
@@ -53,17 +56,10 @@ export class Renderer {
       }
     }
 
-    // 이동/공격 범위 하이라이트
-    if (moveRange) {
-      ctx.fillStyle = "rgba(80,150,255,0.4)";
-      for (const k of moveRange) {
-        const [x, y] = k.split(",").map(Number);
-        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
-      }
-    }
-    if (attackRange) {
-      ctx.fillStyle = "rgba(255,70,70,0.45)";
-      for (const k of attackRange) {
+    // 범위 하이라이트
+    for (const h of highlights) {
+      ctx.fillStyle = h.color;
+      for (const k of h.cells) {
         const [x, y] = k.split(",").map(Number);
         ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
       }
@@ -78,6 +74,9 @@ export class Renderer {
       ctx.arc(cx, cy, TILE * 0.36, 0, Math.PI * 2);
       ctx.fillStyle = u.side === "player" ? "#2b5fd9" : "#c43131";
       if (u.acted && u.side === "player") ctx.fillStyle = "#5a6b8f";
+      // 책사는 보라 계열로 구분
+      if (u.cls === "sorcerer")
+        ctx.fillStyle = u.side === "player" ? "#6a4fd9" : "#8f31c4";
       ctx.fill();
       ctx.lineWidth = u === selected ? 3 : 1.5;
       ctx.strokeStyle = u === selected ? "#ffe14d" : "rgba(0,0,0,0.5)";
@@ -107,7 +106,7 @@ export class Renderer {
       ctx.strokeRect(cursor.x * TILE + 2, cursor.y * TILE + 2, TILE - 4, TILE - 4);
     }
 
-    // 데미지 플로팅 텍스트
+    // 플로팅 텍스트
     ctx.textAlign = "center";
     for (const f of floats) {
       ctx.globalAlpha = Math.min(1, f.life / 20);

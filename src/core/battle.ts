@@ -1,12 +1,18 @@
 import { Stage, Unit, affinity, terrainGuard } from "./types";
-import { terrainAt } from "./grid";
+import { manhattan, terrainAt } from "./grid";
+import { Spell } from "../data/spells";
+import { Item } from "../data/items";
 
-export interface CombatResult {
+// ── 물리 공격 ──────────────────────────────────────────────────
+
+export interface Hit {
+  target: Unit;
   damage: number;
   killed: boolean;
+  counter: boolean; // 반격 여부
 }
 
-/** 데미지 = (공격력 × 상성 × 지형계수) − 방어력, ±10% 난수, 최소 1 */
+/** 물리 데미지 = (공격력 × 상성 × 지형계수) − 방어력, ±10% 난수, 최소 1 */
 export function calcDamage(stage: Stage, attacker: Unit, defender: Unit): number {
   const aff = affinity(attacker.cls, defender.cls);
   const guard = terrainGuard(terrainAt(stage, defender.x, defender.y));
@@ -15,8 +21,83 @@ export function calcDamage(stage: Stage, attacker: Unit, defender: Unit): number
   return Math.max(1, Math.round(base * variance));
 }
 
-export function attack(stage: Stage, attacker: Unit, defender: Unit): CombatResult {
-  const damage = calcDamage(stage, attacker, defender);
-  defender.hp = Math.max(0, defender.hp - damage);
-  return { damage, killed: defender.hp === 0 };
+/**
+ * 공격 실행. 방어자가 생존해 있고 공격자가 방어자의 무기 사거리 안이면
+ * 반격이 발생한다 (위력 75%).
+ */
+export function attackExchange(
+  stage: Stage,
+  attacker: Unit,
+  defender: Unit
+): Hit[] {
+  const hits: Hit[] = [];
+
+  const dmg = calcDamage(stage, attacker, defender);
+  defender.hp = Math.max(0, defender.hp - dmg);
+  hits.push({ target: defender, damage: dmg, killed: defender.hp === 0, counter: false });
+
+  if (defender.hp > 0) {
+    const d = manhattan(attacker, defender);
+    if (d >= defender.range[0] && d <= defender.range[1]) {
+      const cdmg = Math.max(1, Math.round(calcDamage(stage, defender, attacker) * 0.75));
+      attacker.hp = Math.max(0, attacker.hp - cdmg);
+      hits.push({ target: attacker, damage: cdmg, killed: attacker.hp === 0, counter: true });
+    }
+  }
+  return hits;
+}
+
+// ── 책략 ───────────────────────────────────────────────────────
+
+export interface SpellResult {
+  missed: boolean;
+  amount: number; // 데미지 또는 회복량
+  killed: boolean;
+}
+
+/** 책략 명중률: 지력 차이 기반. 회복은 항상 성공 */
+export function spellHitChance(caster: Unit, target: Unit): number {
+  return Math.min(95, Math.max(30, 65 + (caster.int - target.int) * 2));
+}
+
+/**
+ * 책략 사용. 데미지 = 지력 × 위력 − 대상 지력 × 0.5 (지형 무시, 반격 없음).
+ * 회복 = 지력 × 위력.
+ */
+export function castSpell(caster: Unit, spell: Spell, target: Unit): SpellResult {
+  caster.mp -= spell.mp;
+
+  if (spell.kind === "heal") {
+    const amount = Math.round(caster.int * spell.power);
+    const healed = Math.min(amount, target.maxHp - target.hp);
+    target.hp += healed;
+    return { missed: false, amount: healed, killed: false };
+  }
+
+  if (Math.random() * 100 > spellHitChance(caster, target)) {
+    return { missed: true, amount: 0, killed: false };
+  }
+  const variance = 0.9 + Math.random() * 0.2;
+  const amount = Math.max(
+    1,
+    Math.round((caster.int * spell.power - target.int * 0.5) * variance)
+  );
+  target.hp = Math.max(0, target.hp - amount);
+  return { missed: false, amount, killed: target.hp === 0 };
+}
+
+// ── 아이템 ─────────────────────────────────────────────────────
+
+export interface ItemResult {
+  hpGain: number;
+  mpGain: number;
+}
+
+/** 아이템 사용 (자신에게). 사용 후 소지품에서 제거는 호출측 책임 */
+export function useItem(user: Unit, item: Item): ItemResult {
+  const hpGain = item.heal ? Math.min(item.heal, user.maxHp - user.hp) : 0;
+  const mpGain = item.mp ? Math.min(item.mp, user.maxMp - user.mp) : 0;
+  user.hp += hpGain;
+  user.mp += mpGain;
+  return { hpGain, mpGain };
 }

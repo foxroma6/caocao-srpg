@@ -46,6 +46,35 @@
       text-align: center;
     }
     #banner.show { opacity: 1; }
+    #menu {
+      position: absolute;
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      background: #262a35;
+      border: 1px solid #d9c07a;
+      border-radius: 6px;
+      padding: 4px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+      min-width: 120px;
+    }
+    #menu button {
+      background: transparent;
+      color: #e8e6e0;
+      border: none;
+      border-radius: 4px;
+      padding: 7px 12px;
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #menu button span { color: #9aa3b5; font-size: 12px; }
+    #menu button:hover:not(:disabled) { background: #3a4256; }
+    #menu button:disabled { color: #5a6070; cursor: default; }
     #hud {
       display: flex;
       gap: 12px;
@@ -65,7 +94,8 @@
       min-height: 48px;
     }
     #info .cls { color: #d9c07a; font-size: 12px; }
-    #info .terrain { color: #9aa3b5; font-size: 12px; }
+    #info .title { color: #b8a06a; font-size: 12px; font-style: italic; }
+    #info .sub, #info .terrain { color: #9aa3b5; font-size: 12px; }
     button {
       background: #2b5fd9;
       color: #fff;
@@ -84,14 +114,15 @@
   <div id="wrap">
     <canvas id="game"></canvas>
     <div id="banner"></div>
+    <div id="menu"></div>
   </div>
   <div id="hud">
     <div id="info">유닛을 선택하세요</div>
     <button id="end-turn">턴 종료</button>
   </div>
   <div id="help">
-    좌클릭: 선택/이동/공격 · 같은 유닛 다시 클릭: 제자리 행동 · 우클릭: 취소 ·
-    파란 칸: 이동 범위 · 빨간 칸: 공격 대상
+    좌클릭: 선택 → 이동 → 행동 메뉴(공격/책략/아이템/대기) · 우클릭: 취소 ·
+    파란 칸: 이동 범위 · 빨간 칸: 공격 · 보라 칸: 책략 · 초록 칸: 회복
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

@@ -2,8 +2,8 @@
 
 export type Side = "player" | "enemy";
 
-/** 병종: 기병 > 보병 > 궁병 > 기병 상성 */
-export type UnitClass = "cavalry" | "infantry" | "archer" | "leader";
+/** 병종: 기병 > 보병 > 궁병 > 기병 상성. 책사/군주는 상성 중립 */
+export type UnitClass = "cavalry" | "infantry" | "archer" | "leader" | "sorcerer";
 
 /** 지형 타입 */
 export type Terrain = "plain" | "forest" | "mountain" | "fort";
@@ -11,19 +11,25 @@ export type Terrain = "plain" | "forest" | "mountain" | "fort";
 export interface UnitData {
   id: string;
   name: string; // 표시 이름 (예: 조조)
+  title: string; // 칭호 (예: 난세의 효웅)
   side: Side;
   cls: UnitClass;
   maxHp: number;
+  maxMp: number;
   atk: number;
   def: number;
+  int: number; // 지력: 책략 위력·명중·저항
   mov: number; // 이동력
-  range: [number, number]; // 공격 사거리 [min, max]
+  range: [number, number]; // 무기 사거리 [min, max]
+  spells: string[]; // 사용 가능한 책략 id 목록
+  items: string[]; // 소지 아이템 id 목록
   x: number;
   y: number;
 }
 
 export interface Unit extends UnitData {
   hp: number;
+  mp: number;
   acted: boolean; // 이번 턴 행동 완료 여부
 }
 
@@ -59,7 +65,7 @@ export function moveCost(t: Terrain, cls: UnitClass): number {
   }
 }
 
-/** 지형별 받는 피해 계수 (낮을수록 방어에 유리) */
+/** 지형별 받는 물리 피해 계수 (낮을수록 방어에 유리). 책략은 지형 무시 */
 export function terrainGuard(t: Terrain): number {
   switch (t) {
     case "plain":
@@ -90,6 +96,7 @@ export const CLASS_LABEL: Record<UnitClass, string> = {
   infantry: "보병",
   archer: "궁병",
   leader: "군주",
+  sorcerer: "책사",
 };
 
 export const TERRAIN_LABEL: Record<Terrain, string> = {
