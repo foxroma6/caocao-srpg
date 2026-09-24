@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>조조전풍 SRPG</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      background: #1a1c22;
+      color: #e8e6e0;
+      font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    h1 { font-size: 18px; margin: 4px 0 12px; color: #d9c07a; }
+    #wrap { position: relative; }
+    canvas {
+      border: 2px solid #3a3f4d;
+      border-radius: 4px;
+      max-width: 100%;
+      height: auto;
+      image-rendering: pixelated;
+      cursor: pointer;
+    }
+    #banner {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: bold;
+      color: #ffe14d;
+      text-shadow: 0 2px 8px #000;
+      background: rgba(0, 0, 0, 0.45);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+      white-space: pre-line;
+      text-align: center;
+    }
+    #banner.show { opacity: 1; }
+    #hud {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 10px;
+      width: 100%;
+      max-width: 640px;
+    }
+    #info {
+      flex: 1;
+      background: #262a35;
+      border: 1px solid #3a3f4d;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 48px;
+    }
+    #info .cls { color: #d9c07a; font-size: 12px; }
+    #info .terrain { color: #9aa3b5; font-size: 12px; }
+    button {
+      background: #2b5fd9;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 10px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:hover { background: #3a6ee8; }
+    #help { font-size: 12px; color: #9aa3b5; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1 id="stage-name">조조전풍 SRPG</h1>
+  <div id="wrap">
+    <canvas id="game"></canvas>
+    <div id="banner"></div>
+  </div>
+  <div id="hud">
+    <div id="info">유닛을 선택하세요</div>
+    <button id="end-turn">턴 종료</button>
+  </div>
+  <div id="help">
+    좌클릭: 선택/이동/공격 · 같은 유닛 다시 클릭: 제자리 행동 · 우클릭: 취소 ·
+    파란 칸: 이동 범위 · 빨간 칸: 공격 대상
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
