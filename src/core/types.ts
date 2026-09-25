@@ -3,7 +3,7 @@
 export type Side = "player" | "enemy";
 
 /** 지형 타입 */
-export type Terrain = "plain" | "forest" | "mountain" | "fort";
+export type Terrain = "plain" | "forest" | "mountain" | "fort" | "water";
 
 export interface UnitData {
   id: string;
@@ -51,6 +51,7 @@ export const TERRAIN_CODE: Record<string, Terrain> = {
   f: "forest",
   m: "mountain",
   F: "fort",
+  w: "water",
 };
 
 /** 지형별 이동 비용 (Infinity = 진입 불가). mounted = 기마 직업 */
@@ -64,6 +65,8 @@ export function moveCost(t: Terrain, mounted: boolean): number {
       return mounted ? Infinity : 3;
     case "fort":
       return 1;
+    case "water":
+      return Infinity; // 도하 불가 (여울/다리로만 건넌다)
   }
 }
 
@@ -78,6 +81,8 @@ export function terrainGuard(t: Terrain): number {
       return 0.7;
     case "fort":
       return 0.6;
+    case "water":
+      return 1.0;
   }
 }
 
@@ -86,4 +91,5 @@ export const TERRAIN_LABEL: Record<Terrain, string> = {
   forest: "숲",
   mountain: "산",
   fort: "성채",
+  water: "강",
 };

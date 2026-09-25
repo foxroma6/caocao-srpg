@@ -796,8 +796,11 @@ document.getElementById("stage-name")!.textContent = stage.name;
   bannerEl.classList.remove("show");
   banner(`${stage.name}\n1턴 아군 페이즈`, 1500);
   frame();
-  // 타임아웃 뒤 늦게 도착한 에셋도 반영 (뷰 재구성)
-  void assetsReady.then(() => scene3d.invalidateViews());
+  // 타임아웃 뒤 늦게 도착한 에셋도 반영 (뷰·데코 재구성)
+  void assetsReady.then(() => {
+    scene3d.invalidateViews();
+    scene3d.refreshDecor();
+  });
 })();
 
 // 디버그: ?select=조조 정보 카드 / ?settings=설정 모달 미리보기

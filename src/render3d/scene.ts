@@ -11,7 +11,14 @@ import {
   collectMaterials,
   escortSprite,
 } from "./models";
-import { GltfInstance, SPRITE_ASSET, hasAsset, heroAssetKey, instantiate } from "./assets";
+import {
+  GltfInstance,
+  SPRITE_ASSET,
+  hasAsset,
+  heroAssetKey,
+  instantiate,
+  instantiateProp,
+} from "./assets";
 import { RAGE_MAX, ULTIMATES } from "../data/ultimates";
 import { factionOf } from "../data/factions";
 
@@ -78,6 +85,8 @@ export class Scene3D {
   private raycaster = new THREE.Raycaster();
   private tileMeshes: THREE.Mesh[] = [];
   private tileHeights: number[][] = [];
+  private decorGroup = new THREE.Group(); // 나무·바위·성벽 등 (에셋 도착 시 재구성)
+  private waterMats: { mat: THREE.MeshBasicMaterial; phase: number }[] = [];
   private highlightGroup = new THREE.Group();
   private highlightSig = "";
   private cursorMesh: THREE.LineLoop;
@@ -116,6 +125,8 @@ export class Scene3D {
 
     // ── 지형 ──
     this.buildTerrain();
+    this.scene.add(this.decorGroup);
+    this.buildDecor();
     this.scene.add(this.highlightGroup);
 
     // ── 커서 ──
@@ -181,6 +192,7 @@ export class Scene3D {
   private heightFor(t: Terrain): number {
     if (t === "mountain") return 0.35;
     if (t === "fort") return 0.15;
+    if (t === "water") return -0.1;
     return 0;
   }
 
@@ -200,6 +212,7 @@ export class Scene3D {
         const color =
           t === "mountain" ? 0x8d7b5f
           : t === "fort" ? 0xa8a08c
+          : t === "water" ? 0x2c5580
           : GREENS[Math.floor(hash(x, y) * GREENS.length)];
         const tile = new THREE.Mesh(new THREE.BoxGeometry(0.97, boxH, 0.97), std(color));
         tile.position.set(this.worldX(x), boxH / 2 - 0.25, this.worldZ(y));
@@ -208,11 +221,57 @@ export class Scene3D {
         this.scene.add(tile);
         this.tileMeshes.push(tile);
 
-        if (t === "forest") this.addTrees(x, y);
-        if (t === "mountain") this.addRocks(x, y, hgt);
-        if (t === "fort") this.addFortWalls(x, y, hgt);
+        // 물: 일렁이는 수면 하이라이트
+        if (t === "water") {
+          const mat = new THREE.MeshBasicMaterial({
+            color: 0x6fa8dc,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+          });
+          const surf = new THREE.Mesh(new THREE.PlaneGeometry(0.97, 0.97), mat);
+          surf.rotation.x = -Math.PI / 2;
+          surf.position.set(this.worldX(x), hgt + 0.015, this.worldZ(y));
+          this.scene.add(surf);
+          this.waterMats.push({ mat, phase: hash(x, y, 99) * Math.PI * 2 });
+        }
       }
     }
+  }
+
+  /** 지형 데코 생성 (GLTF 프롭 우선, 없으면 절차 폴백) */
+  private buildDecor() {
+    const { stage } = this;
+    for (let y = 0; y < stage.height; y++) {
+      for (let x = 0; x < stage.width; x++) {
+        const t = terrainAt(stage, x, y);
+        if (t === "forest") this.addTrees(x, y);
+        if (t === "mountain") this.addRocks(x, y, this.tileTop(x, y));
+        if (t === "fort") this.addFortWalls(x, y, this.tileTop(x, y));
+        // 평지: 가끔 작은 바위로 심심함 제거 (이동엔 영향 없음)
+        if (t === "plain" && hash(x, y, 70) > 0.9) {
+          const rock = instantiateProp(hash(x, y, 71) > 0.5 ? "prop:rock_a" : "prop:rock_d");
+          if (rock) {
+            rock.scale.multiplyScalar(0.55 + hash(x, y, 72) * 0.3);
+            const g = new THREE.Group();
+            g.add(rock);
+            g.position.set(
+              this.worldX(x) + (hash(x, y, 73) - 0.5) * 0.6,
+              0,
+              this.worldZ(y) + (hash(x, y, 74) - 0.5) * 0.6
+            );
+            g.rotation.y = hash(x, y, 75) * Math.PI * 2;
+            this.decorGroup.add(g);
+          }
+        }
+      }
+    }
+  }
+
+  /** 에셋이 늦게 로드됐을 때 데코를 프롭 버전으로 재구성 */
+  refreshDecor() {
+    this.decorGroup.clear();
+    this.buildDecor();
   }
 
   private addTrees(x: number, y: number) {
@@ -223,29 +282,37 @@ export class Scene3D {
     ];
     for (let i = 0; i < spots.length; i++) {
       const [ox, oz] = spots[i];
-      const scale = 0.8 + hash(x, y, 3 + i) * 0.4;
+      const scale = 0.85 + hash(x, y, 3 + i) * 0.45;
       const g = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.25, 6), std(0x6b4a2f));
-      trunk.position.y = 0.12;
-      trunk.castShadow = true;
-      g.add(trunk);
-      const c1 = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.35, 7), std(0x437536));
-      c1.position.y = 0.35;
-      c1.castShadow = true;
-      g.add(c1);
-      const c2 = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.28, 7), std(0x5d8f43));
-      c2.position.y = 0.55;
-      c2.castShadow = true;
-      g.add(c2);
+
+      const prop = instantiateProp(hash(x, y, 8 + i) > 0.5 ? "prop:tree_a" : "prop:tree_b");
+      if (prop) {
+        g.add(prop);
+      } else {
+        // 절차 폴백
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.25, 6), std(0x6b4a2f));
+        trunk.position.y = 0.12;
+        trunk.castShadow = true;
+        g.add(trunk);
+        const c1 = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.35, 7), std(0x437536));
+        c1.position.y = 0.35;
+        c1.castShadow = true;
+        g.add(c1);
+        const c2 = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.28, 7), std(0x5d8f43));
+        c2.position.y = 0.55;
+        c2.castShadow = true;
+        g.add(c2);
+      }
       g.scale.setScalar(scale);
       g.position.set(this.worldX(x) + ox, 0, this.worldZ(y) + oz);
-      g.rotation.y = hash(x, y, 7 + i) * Math.PI;
-      this.scene.add(g);
+      g.rotation.y = hash(x, y, 7 + i) * Math.PI * 2;
+      this.decorGroup.add(g);
     }
   }
 
   private addRocks(x: number, y: number, hgt: number) {
     const std = (c: number) => new THREE.MeshStandardMaterial({ color: c, flatShading: true });
+    const keys = ["prop:rock_a", "prop:rock_b", "prop:rock_d"];
     const spots: [number, number, number][] = [
       [-0.3, -0.3, 0.16],
       [0.3, -0.25, 0.12],
@@ -253,15 +320,25 @@ export class Scene3D {
     ];
     for (let i = 0; i < spots.length; i++) {
       const [ox, oz, r] = spots[i];
-      const rock = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(r * (0.8 + hash(x, y, 50 + i) * 0.5), 0),
-        std(i % 2 ? 0x6e5f48 : 0x7d6c53)
-      );
-      rock.position.set(this.worldX(x) + ox, hgt + r * 0.5, this.worldZ(y) + oz);
-      rock.rotation.set(hash(x, y, 60 + i) * 3, hash(x, y, 63 + i) * 3, 0);
-      rock.castShadow = true;
-      rock.receiveShadow = true;
-      this.scene.add(rock);
+      const prop = instantiateProp(keys[Math.floor(hash(x, y, 55 + i) * keys.length)]);
+      if (prop) {
+        const g = new THREE.Group();
+        g.add(prop);
+        g.scale.setScalar(0.9 + hash(x, y, 50 + i) * 0.7);
+        g.position.set(this.worldX(x) + ox, hgt, this.worldZ(y) + oz);
+        g.rotation.y = hash(x, y, 60 + i) * Math.PI * 2;
+        this.decorGroup.add(g);
+      } else {
+        const rock = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(r * (0.8 + hash(x, y, 50 + i) * 0.5), 0),
+          std(i % 2 ? 0x6e5f48 : 0x7d6c53)
+        );
+        rock.position.set(this.worldX(x) + ox, hgt + r * 0.5, this.worldZ(y) + oz);
+        rock.rotation.set(hash(x, y, 60 + i) * 3, hash(x, y, 63 + i) * 3, 0);
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        this.decorGroup.add(rock);
+      }
     }
   }
 
@@ -273,30 +350,42 @@ export class Scene3D {
     wall.position.set(wx, hgt + 0.11, wz - 0.42);
     wall.castShadow = true;
     wall.receiveShadow = true;
-    this.scene.add(wall);
+    this.decorGroup.add(wall);
     for (let i = 0; i < 4; i++) {
       const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.12), std(0x7a7262));
       tooth.position.set(wx - 0.36 + i * 0.24, hgt + 0.26, wz - 0.42);
       tooth.castShadow = true;
-      this.scene.add(tooth);
+      this.decorGroup.add(tooth);
     }
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.4, 6), std(0x8a8270));
-    tower.position.set(wx - 0.38, hgt + 0.2, wz - 0.36);
-    tower.castShadow = true;
-    this.scene.add(tower);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.14, 6), std(0x6a4a3a));
-    roof.position.set(wx - 0.38, hgt + 0.47, wz - 0.36);
-    roof.castShadow = true;
-    this.scene.add(roof);
+
+    // 망루: KayKit 타워 프롭 우선
+    const towerProp = instantiateProp("prop:tower");
+    if (towerProp) {
+      const g = new THREE.Group();
+      g.add(towerProp);
+      g.position.set(wx - 0.34, hgt, wz - 0.3);
+      g.rotation.y = Math.PI / 4;
+      this.decorGroup.add(g);
+    } else {
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.4, 6), std(0x8a8270));
+      tower.position.set(wx - 0.38, hgt + 0.2, wz - 0.36);
+      tower.castShadow = true;
+      this.decorGroup.add(tower);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.14, 6), std(0x6a4a3a));
+      roof.position.set(wx - 0.38, hgt + 0.47, wz - 0.36);
+      roof.castShadow = true;
+      this.decorGroup.add(roof);
+    }
+
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.4, 4), std(0x5a4a32));
     pole.position.set(wx + 0.38, hgt + 0.4, wz - 0.36);
-    this.scene.add(pole);
+    this.decorGroup.add(pole);
     const flag = new THREE.Mesh(
       new THREE.PlaneGeometry(0.2, 0.12),
       new THREE.MeshStandardMaterial({ color: 0xc03030, side: THREE.DoubleSide })
     );
     flag.position.set(wx + 0.28, hgt + 0.54, wz - 0.36);
-    this.scene.add(flag);
+    this.decorGroup.add(flag);
   }
 
   // ── 피킹 / 투영 ──────────────────────────────────────────────
@@ -576,6 +665,11 @@ export class Scene3D {
   syncUnits(units: Unit[], selected: Unit | null) {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     this.time += dt;
+
+    // 수면 일렁임
+    for (const w of this.waterMats) {
+      w.mat.opacity = 0.3 + 0.14 * Math.sin(this.time * 1.7 + w.phase);
+    }
 
     for (const u of units) {
       let view = this.views.get(u.id);

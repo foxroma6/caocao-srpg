@@ -33,6 +33,13 @@ const FILES: Record<string, FileSpec> = {
   "hero:xiahoudun": { url: "models/hero_xiahoudun.glb", targetH: 0.68, optional: true },
   "hero:xiahouyuan": { url: "models/hero_xiahouyuan.glb", targetH: 0.95, optional: true },
   "hero:yb5": { url: "models/hero_taoist.glb", targetH: 0.68, optional: true },
+  // ── 지형 데코 (KayKit Medieval Hexagon, CC0) ──
+  "prop:tree_a": { url: "models/props/tree_single_A.gltf", targetH: 0.62, optional: true },
+  "prop:tree_b": { url: "models/props/tree_single_B.gltf", targetH: 0.68, optional: true },
+  "prop:rock_a": { url: "models/props/rock_single_A.gltf", targetH: 0.2, optional: true },
+  "prop:rock_b": { url: "models/props/rock_single_B.gltf", targetH: 0.26, optional: true },
+  "prop:rock_d": { url: "models/props/rock_single_D.gltf", targetH: 0.17, optional: true },
+  "prop:tower": { url: "models/props/building_tower_A_yellow.gltf", targetH: 0.8, optional: true },
 };
 
 /** 유닛 sprite → GLTF 에셋 매핑 (보행 유닛만; 기마·전용 캐릭터는 절차 모델) */
@@ -75,6 +82,26 @@ export function hasAsset(key: string | null | undefined): boolean {
 export function heroAssetKey(unitId: string): string | null {
   const key = `hero:${unitId}`;
   return REGISTRY.has(key) ? key : null;
+}
+
+/**
+ * 정적 데코 프롭 인스턴스 (지오메트리·머티리얼 공유, 발밑 y=0 정렬).
+ * 로드 전이거나 실패했으면 null → 호출측이 절차 데코로 폴백.
+ */
+export function instantiateProp(key: string): THREE.Object3D | null {
+  const asset = REGISTRY.get(key);
+  if (!asset) return null;
+  const obj = asset.scene.clone(true);
+  obj.scale.setScalar(asset.normScale);
+  obj.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  const b = new THREE.Box3().setFromObject(obj);
+  obj.position.y = -b.min.y;
+  return obj;
 }
 
 export type ClipRole = "idle" | "walk" | "attack" | "death";
