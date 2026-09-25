@@ -507,78 +507,53 @@ const CHARACTER_BUILDERS: Record<string, () => THREE.Group> = {
   xiahouyuan: buildXiahouyuan,
 };
 
-/** 장수를 따르는 호위병 (부대 표현) */
-function buildEscort(u: Unit, pal: Palette): THREE.Group {
-  const sprite = JOBS[u.job].sprite;
-  switch (sprite) {
+/** 전용 모델이 있는 캐릭터 (GLTF로 대체하지 않는다) */
+export const NAMED_IDS = new Set(Object.keys(CHARACTER_BUILDERS));
+
+/** 호위병의 sprite 종류 (부대 편성용) */
+export function escortSprite(u: Unit): SpriteKind {
+  switch (JOBS[u.job].sprite) {
     case "lord":
     case "guard":
-      return buildFoot("guard", pal);
+      return "guard";
     case "horsearcher":
-      return buildMounted("horsearcher", pal);
+      return "horsearcher";
     case "banditcav":
-      return buildMounted("banditcav", pal);
+      return "banditcav";
     case "banditarcher":
-      return buildFoot("banditarcher", pal);
+      return "banditarcher";
     default:
-      return buildFoot("bandit", pal);
+      return "bandit";
   }
 }
 
-export interface UnitModel {
-  group: THREE.Group;
-  materials: THREE.MeshStandardMaterial[];
-  ring: THREE.Mesh; // 선택 링
-  escorts: THREE.Group[]; // 호위병 (HP에 따라 줄어든다)
-}
-
-export function buildUnitModel(u: Unit): UnitModel {
+/** 장수(리더) 절차 모델 */
+export function buildLeader(u: Unit): THREE.Group {
   const job = JOBS[u.job];
   const custom = CHARACTER_BUILDERS[u.id];
   const pal = palette(u);
-  const leader = custom
+  return custom
     ? custom()
     : job.mounted
       ? buildMounted(job.sprite, pal)
       : buildFoot(job.sprite, pal);
+}
 
-  // ── 부대 편성: 장수(앞) + 호위병 2(뒤 양옆) ──
-  const squad = new THREE.Group();
-  leader.position.x = 0.08;
-  squad.add(leader);
+/** 호위병 절차 모델 */
+export function buildProcEscort(u: Unit): THREE.Group {
+  const pal = palette(u);
+  const sprite = escortSprite(u);
+  const mounted = sprite === "horsearcher" || sprite === "banditcav";
+  return mounted ? buildMounted(sprite, pal) : buildFoot(sprite, pal);
+}
 
-  const escorts: THREE.Group[] = [];
-  const escortScale = job.mounted ? 0.62 : 0.7;
-  for (const dz of [-0.25, 0.25]) {
-    const e = buildEscort(u, pal);
-    e.scale.setScalar(escortScale);
-    e.position.set(job.mounted ? -0.26 : -0.24, 0, dz);
-    squad.add(e);
-    escorts.push(e);
-  }
-
-  if (u.side === "enemy") squad.rotation.y = Math.PI; // 적은 -X를 바라봄
-
-  // 선택 링 (회전 영향 없도록 부모에 별도 부착)
-  const root = new THREE.Group();
-  root.add(squad);
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.4, 0.022, 6, 24),
-    new THREE.MeshBasicMaterial({ color: 0xffe14d })
-  );
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.02;
-  ring.visible = false;
-  root.add(ring);
-
-  root.scale.setScalar(job.mounted ? 1.02 : 1.12); // 보드 대비 가독성
-
-  const materials: THREE.MeshStandardMaterial[] = [];
+/** 수집: 그룹 내 표준 머티리얼 (opacity 제어용) */
+export function collectMaterials(root: THREE.Object3D): THREE.MeshStandardMaterial[] {
+  const out: THREE.MeshStandardMaterial[] = [];
   root.traverse((o) => {
     if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
-      materials.push(o.material);
+      out.push(o.material);
     }
   });
-
-  return { group: root, materials, ring, escorts };
+  return out;
 }

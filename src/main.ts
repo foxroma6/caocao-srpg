@@ -19,6 +19,7 @@ import { ITEMS } from "./data/items";
 import { TRAITS } from "./data/traits";
 import { getPortrait } from "./ui/portraits";
 import { Highlight, Scene3D } from "./render3d/scene";
+import { loadAssets } from "./render3d/assets";
 
 // ── 게임 상태 ──────────────────────────────────────────────────
 
@@ -304,11 +305,18 @@ function openItemMenu(u: Unit) {
 async function doAttack(attacker: Unit, defender: Unit) {
   mode = "busy";
   targetCells = null;
+  await scene3d.attackAnim(attacker, defender);
   const hits = attackExchange(stage, attacker, defender, units);
-  let delay = false;
+  let first = true;
   for (const h of hits) {
-    if (delay || h.counter) await sleep(450);
-    delay = true;
+    if (h.counter) {
+      await sleep(300);
+      await scene3d.attackAnim(defender, attacker);
+    } else if (!first) {
+      await sleep(250);
+      await scene3d.attackAnim(attacker, defender); // 연사 등 추가 타격
+    }
+    first = false;
     const striker = h.counter ? defender : attacker;
     for (const tag of h.tags) addFloat(striker.x, striker.y, tag, "#ffd24d");
     if (h.counter) {
@@ -319,7 +327,7 @@ async function doAttack(attacker: Unit, defender: Unit) {
     if (h.killed)
       addFloat(h.target.x, h.target.y, h.target.side === "enemy" ? "격파!" : "전사…", "#ff8080");
   }
-  await sleep(300);
+  await sleep(400);
   finishAction(attacker);
 }
 
@@ -327,7 +335,8 @@ async function doSpell(caster: Unit, spell: Spell, target: Unit) {
   mode = "busy";
   targetCells = null;
   addFloat(caster.x, caster.y, spell.name + "!", "#c890ff");
-  await sleep(350);
+  await scene3d.attackAnim(caster, target, 0.45);
+  await sleep(200);
   const res = castSpell(caster, spell, target);
   for (const tag of res.tags) addFloat(caster.x, caster.y, tag, "#ffd24d");
   if (res.missed) {
@@ -493,9 +502,10 @@ async function enemyAct(e: Unit) {
       const [cx, cy] = best.cell.split(",").map(Number);
       e.x = cx;
       e.y = cy;
-      await sleep(400);
+      await sleep(500);
       addFloat(e.x, e.y, spell.name + "!", "#c890ff");
-      await sleep(350);
+      await scene3d.attackAnim(e, best.target, 0.45);
+      await sleep(200);
       const res = castSpell(e, spell, best.target);
       if (res.missed) addFloat(best.target.x, best.target.y, "실패!", "#cccccc");
       else {
@@ -522,12 +532,19 @@ async function enemyAct(e: Unit) {
     const [cx, cy] = best.cell.split(",").map(Number);
     e.x = cx;
     e.y = cy;
-    await sleep(400);
+    await sleep(500);
+    await scene3d.attackAnim(e, best.target);
     const hits = attackExchange(stage, e, best.target, units);
-    let delay = false;
+    let first = true;
     for (const h of hits) {
-      if (delay || h.counter) await sleep(450);
-      delay = true;
+      if (h.counter) {
+        await sleep(300);
+        await scene3d.attackAnim(best.target, e);
+      } else if (!first) {
+        await sleep(250);
+        await scene3d.attackAnim(e, best.target);
+      }
+      first = false;
       const striker = h.counter ? best.target : e;
       for (const tag of h.tags) addFloat(striker.x, striker.y, tag, "#ffd24d");
       if (h.counter) {
@@ -584,8 +601,19 @@ function frame() {
 }
 
 document.getElementById("stage-name")!.textContent = stage.name;
-banner(`${stage.name}\n1턴 아군 페이즈`, 1500);
-frame();
+(async () => {
+  // GLTF 병사 모델 프리로드 (실패해도 절차 모델로 진행)
+  bannerEl.textContent = "부대 편성 중…";
+  bannerEl.classList.add("show");
+  try {
+    await Promise.race([loadAssets(), sleep(8000)]);
+  } catch {
+    /* 절차 모델 폴백 */
+  }
+  bannerEl.classList.remove("show");
+  banner(`${stage.name}\n1턴 아군 페이즈`, 1500);
+  frame();
+})();
 
 // 디버그: ?portraits 로 접속하면 전 유닛 초상화 확인
 if (location.search.includes("portraits")) {
