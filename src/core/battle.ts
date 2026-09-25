@@ -11,39 +11,93 @@ export interface Hit {
   damage: number;
   killed: boolean;
   counter: boolean; // 반격 여부
+  tags: string[]; // 발동한 특성 표시 ("맹장!" 등) — 타격자 위에 띄운다
 }
 
-/** 물리 데미지 = (공격력 × 상성 × 지형계수) − 방어력, ±10% 난수, 최소 1 */
-export function calcDamage(stage: Stage, attacker: Unit, defender: Unit): number {
+/** 특성에 의한 물리 데미지 배율 (타격자 기준) */
+function traitBonus(attacker: Unit, allUnits?: Unit[]): { mult: number; tags: string[] } {
+  let mult = 1;
+  const tags: string[] = [];
+
+  // 외눈의 맹장: 잃은 HP 비율에 비례해 강해진다 (최대 +50%)
+  if (attacker.trait === "oneEyed") {
+    const lost = 1 - attacker.hp / attacker.maxHp;
+    if (lost > 0) {
+      mult += 0.5 * lost;
+      if (lost >= 0.4) tags.push("맹장!");
+    }
+  }
+
+  // 패왕의 카리스마: 2칸 이내에 카리스마 보유 아군이 있으면 +15%
+  if (allUnits) {
+    for (const a of allUnits) {
+      if (
+        a.hp > 0 &&
+        a !== attacker &&
+        a.side === attacker.side &&
+        a.trait === "charisma" &&
+        manhattan(a, attacker) <= 2
+      ) {
+        mult += 0.15;
+        tags.push("카리스마!");
+        break;
+      }
+    }
+  }
+  return { mult, tags };
+}
+
+/** 물리 데미지 = (공격력 × 상성 × 지형계수) − 방어력, 특성 배율, ±10% 난수, 최소 1 */
+function calcHit(
+  stage: Stage,
+  attacker: Unit,
+  defender: Unit,
+  allUnits: Unit[] | undefined,
+  scale: number
+): { damage: number; tags: string[] } {
   const aff = affinity(JOBS[attacker.job].category, JOBS[defender.job].category);
   const guard = terrainGuard(terrainAt(stage, defender.x, defender.y));
   const base = attacker.atk * aff * guard - defender.def;
+  const { mult, tags } = traitBonus(attacker, allUnits);
   const variance = 0.9 + Math.random() * 0.2;
-  return Math.max(1, Math.round(base * variance));
+  return { damage: Math.max(1, Math.round(base * mult * scale * variance)), tags };
 }
 
 /**
- * 공격 실행. 방어자가 생존해 있고 공격자가 방어자의 무기 사거리 안이면
+ * 공격 실행. 하후연류 특성은 연속 사격이 발생할 수 있고,
+ * 방어자가 생존해 있으며 공격자가 방어자의 무기 사거리 안이면
  * 반격이 발생한다 (위력 75%).
  */
 export function attackExchange(
   stage: Stage,
   attacker: Unit,
-  defender: Unit
+  defender: Unit,
+  allUnits?: Unit[]
 ): Hit[] {
   const hits: Hit[] = [];
 
-  const dmg = calcDamage(stage, attacker, defender);
-  defender.hp = Math.max(0, defender.hp - dmg);
-  hits.push({ target: defender, damage: dmg, killed: defender.hp === 0, counter: false });
+  const strike = (scale: number, extraTag?: string) => {
+    const { damage, tags } = calcHit(stage, attacker, defender, allUnits, scale);
+    defender.hp = Math.max(0, defender.hp - damage);
+    if (extraTag) tags.unshift(extraTag);
+    hits.push({ target: defender, damage, killed: defender.hp === 0, counter: false, tags });
+  };
 
+  strike(1);
+
+  // 신궁: 25% 확률로 연속 사격
+  if (attacker.trait === "rapidShot" && defender.hp > 0 && Math.random() < 0.25) {
+    strike(0.6, "연사!");
+  }
+
+  // 반격 (방어자 특성도 적용)
   if (defender.hp > 0) {
     const d = manhattan(attacker, defender);
     const [lo, hi] = JOBS[defender.job].range;
     if (d >= lo && d <= hi) {
-      const cdmg = Math.max(1, Math.round(calcDamage(stage, defender, attacker) * 0.75));
-      attacker.hp = Math.max(0, attacker.hp - cdmg);
-      hits.push({ target: attacker, damage: cdmg, killed: attacker.hp === 0, counter: true });
+      const { damage, tags } = calcHit(stage, defender, attacker, allUnits, 0.75);
+      attacker.hp = Math.max(0, attacker.hp - damage);
+      hits.push({ target: attacker, damage, killed: attacker.hp === 0, counter: true, tags });
     }
   }
   return hits;
@@ -55,6 +109,7 @@ export interface SpellResult {
   missed: boolean;
   amount: number; // 데미지 또는 회복량
   killed: boolean;
+  tags: string[];
 }
 
 /** 책략 명중률: 지력 차이 기반. 회복은 항상 성공 */
@@ -68,24 +123,33 @@ export function spellHitChance(caster: Unit, target: Unit): number {
  */
 export function castSpell(caster: Unit, spell: Spell, target: Unit): SpellResult {
   caster.mp -= spell.mp;
+  const tags: string[] = [];
 
   if (spell.kind === "heal") {
     const amount = Math.round(caster.int * spell.power);
     const healed = Math.min(amount, target.maxHp - target.hp);
     target.hp += healed;
-    return { missed: false, amount: healed, killed: false };
+    return { missed: false, amount: healed, killed: false, tags };
   }
 
   if (Math.random() * 100 > spellHitChance(caster, target)) {
-    return { missed: true, amount: 0, killed: false };
+    return { missed: true, amount: 0, killed: false, tags };
   }
+
+  // 태평도 광신: 책략 위력 +20%
+  let mult = 1;
+  if (caster.trait === "zealot") {
+    mult = 1.2;
+    tags.push("광신!");
+  }
+
   const variance = 0.9 + Math.random() * 0.2;
   const amount = Math.max(
     1,
-    Math.round((caster.int * spell.power - target.int * 0.5) * variance)
+    Math.round((caster.int * spell.power - target.int * 0.5) * mult * variance)
   );
   target.hp = Math.max(0, target.hp - amount);
-  return { missed: false, amount, killed: target.hp === 0 };
+  return { missed: false, amount, killed: target.hp === 0, tags };
 }
 
 // ── 아이템 ─────────────────────────────────────────────────────

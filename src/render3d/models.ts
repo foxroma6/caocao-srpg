@@ -253,6 +253,79 @@ function buildMounted(kind: SpriteKind, pal: Palette): THREE.Group {
   return g;
 }
 
+// ── 캐릭터별 외형 개성 (unit.id 기준) ──────────────────────────
+
+/** 「曹」 군기 텍스처 */
+function bannerTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 48;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#2a4ba0";
+  ctx.fillRect(0, 0, 64, 48);
+  ctx.strokeStyle = "#e8c030";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(2, 2, 60, 44);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 30px serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("曹", 32, 26);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  return tex;
+}
+
+function addCharacterAccents(g: THREE.Group, id: string) {
+  if (id === "caocao") {
+    // 등 뒤 「曹」 군기
+    const pole = mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.6, 5), 0x5a4a32);
+    pole.position.set(-0.18, 0.62, 0);
+    g.add(pole);
+    const flag = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.24, 0.17),
+      new THREE.MeshStandardMaterial({
+        map: bannerTexture(),
+        side: THREE.DoubleSide,
+        transparent: true,
+      })
+    );
+    flag.position.set(-0.3, 0.84, 0);
+    flag.castShadow = true;
+    g.add(flag);
+  } else if (id === "xiahoudun") {
+    // 검은 안대 + 머리끈 (하후돈의 외눈)
+    const strap = mesh(new THREE.TorusGeometry(0.088, 0.009, 5, 12), 0x1a1a1a);
+    strap.rotation.x = Math.PI / 2;
+    strap.rotation.z = 0.12;
+    strap.position.y = 0.455;
+    g.add(strap);
+    const patch = mesh(new THREE.BoxGeometry(0.035, 0.045, 0.05), 0x1a1a1a);
+    patch.position.set(0.075, 0.45, 0.038);
+    g.add(patch);
+  } else if (id === "xiahouyuan") {
+    // 등의 화살통 + 화살, 붉은 목도리 (신궁)
+    const quiver = mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.2, 6), 0x6a4a2a);
+    quiver.rotation.z = 0.5;
+    quiver.position.set(-0.15, 0.58, -0.05);
+    g.add(quiver);
+    for (const [ox, oy] of [
+      [-0.2, 0.7],
+      [-0.17, 0.72],
+      [-0.22, 0.68],
+    ] as const) {
+      const arrow = mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.12, 4), 0xd8d0c0);
+      arrow.rotation.z = 0.5;
+      arrow.position.set(ox, oy, -0.05);
+      g.add(arrow);
+    }
+    const scarf = mesh(new THREE.TorusGeometry(0.065, 0.02, 5, 10), 0xc03030);
+    scarf.rotation.x = Math.PI / 2;
+    scarf.position.y = 0.655;
+    g.add(scarf);
+  }
+}
+
 // ── 진입점 ─────────────────────────────────────────────────────
 
 export interface UnitModel {
@@ -265,6 +338,7 @@ export function buildUnitModel(u: Unit): UnitModel {
   const job = JOBS[u.job];
   const pal = palette(u);
   const g = job.mounted ? buildMounted(job.sprite, pal) : buildFoot(job.sprite, pal);
+  addCharacterAccents(g, u.id);
 
   if (u.side === "enemy") g.rotation.y = Math.PI; // 적은 -X를 바라봄
 

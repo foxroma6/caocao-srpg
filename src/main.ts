@@ -16,6 +16,7 @@ import { CATEGORY_LABEL, JOBS } from "./data/jobs";
 import { stage01 } from "./data/stage01";
 import { SPELLS, Spell } from "./data/spells";
 import { ITEMS } from "./data/items";
+import { TRAITS } from "./data/traits";
 import { Highlight, Scene3D } from "./render3d/scene";
 
 // ── 게임 상태 ──────────────────────────────────────────────────
@@ -93,7 +94,12 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
     }</span><br>
     HP ${u.hp}/${u.maxHp} · MP ${u.mp}/${u.maxMp} ·
     공 ${u.atk} · 방 ${u.def} · 지 ${u.int} · 이동 ${u.mov}<br>
-    <span class="sub">책략: ${spellNames} · 소지품: ${itemNames} ·
+    ${
+      u.trait
+        ? `<span class="trait">★ ${TRAITS[u.trait].name}</span>
+           <span class="sub">${TRAITS[u.trait].desc}</span><br>`
+        : ""
+    }<span class="sub">책략: ${spellNames} · 소지품: ${itemNames} ·
     지형: ${TERRAIN_LABEL[terrainAt(stage, u.x, u.y)]}</span>`;
 }
 
@@ -296,10 +302,14 @@ function openItemMenu(u: Unit) {
 async function doAttack(attacker: Unit, defender: Unit) {
   mode = "busy";
   targetCells = null;
-  const hits = attackExchange(stage, attacker, defender);
+  const hits = attackExchange(stage, attacker, defender, units);
+  let delay = false;
   for (const h of hits) {
+    if (delay || h.counter) await sleep(450);
+    delay = true;
+    const striker = h.counter ? defender : attacker;
+    for (const tag of h.tags) addFloat(striker.x, striker.y, tag, "#ffd24d");
     if (h.counter) {
-      await sleep(400);
       addFloat(h.target.x, h.target.y, `반격 -${h.damage}`, "#ffb347");
     } else {
       addFloat(h.target.x, h.target.y, `-${h.damage}`, "#ffe14d");
@@ -317,6 +327,7 @@ async function doSpell(caster: Unit, spell: Spell, target: Unit) {
   addFloat(caster.x, caster.y, spell.name + "!", "#c890ff");
   await sleep(350);
   const res = castSpell(caster, spell, target);
+  for (const tag of res.tags) addFloat(caster.x, caster.y, tag, "#ffd24d");
   if (res.missed) {
     addFloat(target.x, target.y, "실패!", "#cccccc");
   } else if (spell.kind === "heal") {
@@ -510,10 +521,14 @@ async function enemyAct(e: Unit) {
     e.x = cx;
     e.y = cy;
     await sleep(400);
-    const hits = attackExchange(stage, e, best.target);
+    const hits = attackExchange(stage, e, best.target, units);
+    let delay = false;
     for (const h of hits) {
+      if (delay || h.counter) await sleep(450);
+      delay = true;
+      const striker = h.counter ? best.target : e;
+      for (const tag of h.tags) addFloat(striker.x, striker.y, tag, "#ffd24d");
       if (h.counter) {
-        await sleep(400);
         addFloat(h.target.x, h.target.y, `반격 -${h.damage}`, "#ffb347");
       } else {
         addFloat(h.target.x, h.target.y, `-${h.damage}`, "#ff9090");

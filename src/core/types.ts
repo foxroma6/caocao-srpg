@@ -16,6 +16,7 @@ export interface UnitData {
   def: number;
   int: number; // 지력: 책략 위력·명중·저항
   mov: number; // 이동력
+  trait?: string; // 고유 특성 id (data/traits.ts)
   spells: string[]; // 사용 가능한 책략 id 목록
   items: string[]; // 소지 아이템 id 목록
   x: number;
