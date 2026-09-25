@@ -507,29 +507,63 @@ const CHARACTER_BUILDERS: Record<string, () => THREE.Group> = {
   xiahouyuan: buildXiahouyuan,
 };
 
+/** 장수를 따르는 호위병 (부대 표현) */
+function buildEscort(u: Unit, pal: Palette): THREE.Group {
+  const sprite = JOBS[u.job].sprite;
+  switch (sprite) {
+    case "lord":
+    case "guard":
+      return buildFoot("guard", pal);
+    case "horsearcher":
+      return buildMounted("horsearcher", pal);
+    case "banditcav":
+      return buildMounted("banditcav", pal);
+    case "banditarcher":
+      return buildFoot("banditarcher", pal);
+    default:
+      return buildFoot("bandit", pal);
+  }
+}
+
 export interface UnitModel {
   group: THREE.Group;
   materials: THREE.MeshStandardMaterial[];
   ring: THREE.Mesh; // 선택 링
+  escorts: THREE.Group[]; // 호위병 (HP에 따라 줄어든다)
 }
 
 export function buildUnitModel(u: Unit): UnitModel {
   const job = JOBS[u.job];
   const custom = CHARACTER_BUILDERS[u.id];
   const pal = palette(u);
-  const g = custom
+  const leader = custom
     ? custom()
     : job.mounted
       ? buildMounted(job.sprite, pal)
       : buildFoot(job.sprite, pal);
 
-  if (u.side === "enemy") g.rotation.y = Math.PI; // 적은 -X를 바라봄
+  // ── 부대 편성: 장수(앞) + 호위병 2(뒤 양옆) ──
+  const squad = new THREE.Group();
+  leader.position.x = 0.08;
+  squad.add(leader);
+
+  const escorts: THREE.Group[] = [];
+  const escortScale = job.mounted ? 0.62 : 0.7;
+  for (const dz of [-0.25, 0.25]) {
+    const e = buildEscort(u, pal);
+    e.scale.setScalar(escortScale);
+    e.position.set(job.mounted ? -0.26 : -0.24, 0, dz);
+    squad.add(e);
+    escorts.push(e);
+  }
+
+  if (u.side === "enemy") squad.rotation.y = Math.PI; // 적은 -X를 바라봄
 
   // 선택 링 (회전 영향 없도록 부모에 별도 부착)
   const root = new THREE.Group();
-  root.add(g);
+  root.add(squad);
   const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.34, 0.022, 6, 24),
+    new THREE.TorusGeometry(0.4, 0.022, 6, 24),
     new THREE.MeshBasicMaterial({ color: 0xffe14d })
   );
   ring.rotation.x = Math.PI / 2;
@@ -537,7 +571,7 @@ export function buildUnitModel(u: Unit): UnitModel {
   ring.visible = false;
   root.add(ring);
 
-  root.scale.setScalar(1.25); // 보드 대비 가독성 확보
+  root.scale.setScalar(job.mounted ? 1.02 : 1.12); // 보드 대비 가독성
 
   const materials: THREE.MeshStandardMaterial[] = [];
   root.traverse((o) => {
@@ -546,5 +580,5 @@ export function buildUnitModel(u: Unit): UnitModel {
     }
   });
 
-  return { group: root, materials, ring };
+  return { group: root, materials, ring, escorts };
 }

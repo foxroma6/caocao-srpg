@@ -357,6 +357,13 @@ export class Scene3D {
       const opacity = u.acted && u.side === "player" ? 0.45 : 1;
       for (const m of model.materials) m.opacity = opacity;
 
+      // 부대 표현: HP가 깎이면 호위병이 줄어든다
+      const ratio = u.hp / u.maxHp;
+      if (model.escorts.length >= 2) {
+        model.escorts[0].visible = ratio > 1 / 3;
+        model.escorts[1].visible = ratio > 2 / 3;
+      }
+
       model.ring.visible = u === selected;
 
       // HP 바 갱신

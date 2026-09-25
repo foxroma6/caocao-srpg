@@ -108,8 +108,18 @@
       padding: 8px 12px;
       font-size: 14px;
       line-height: 1.5;
-      min-height: 48px;
+      min-height: 72px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
     }
+    #info .pwrap canvas {
+      width: 72px;
+      height: 72px;
+      display: block;
+      border-radius: 4px;
+    }
+    #info .ptext { flex: 1; }
     #info .cls { color: #d9c07a; font-size: 12px; }
     #info .trait { color: #e8a84d; font-size: 12px; font-weight: bold; }
     #info .title { color: #b8a06a; font-size: 12px; font-style: italic; }

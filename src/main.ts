@@ -17,6 +17,7 @@ import { stage01 } from "./data/stage01";
 import { SPELLS, Spell } from "./data/spells";
 import { ITEMS } from "./data/items";
 import { TRAITS } from "./data/traits";
+import { getPortrait } from "./ui/portraits";
 import { Highlight, Scene3D } from "./render3d/scene";
 
 // ── 게임 상태 ──────────────────────────────────────────────────
@@ -87,7 +88,7 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
   const job = JOBS[u.job];
   const spellNames = u.spells.map((s) => SPELLS[s].name).join("·") || "없음";
   const itemNames = u.items.map((i) => ITEMS[i].name).join("·") || "없음";
-  infoEl.innerHTML = `
+  infoEl.innerHTML = `<div class="pwrap"></div><div class="ptext">
     <b>${u.name}</b> <span class="cls">${job.name}</span>
     <span class="title">${CATEGORY_LABEL[job.category]} · 사거리 ${
       job.range[0] === job.range[1] ? job.range[0] : job.range.join("~")
@@ -100,7 +101,8 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
            <span class="sub">${TRAITS[u.trait].desc}</span><br>`
         : ""
     }<span class="sub">책략: ${spellNames} · 소지품: ${itemNames} ·
-    지형: ${TERRAIN_LABEL[terrainAt(stage, u.x, u.y)]}</span>`;
+    지형: ${TERRAIN_LABEL[terrainAt(stage, u.x, u.y)]}</span></div>`;
+  infoEl.querySelector(".pwrap")!.appendChild(getPortrait(u));
 }
 
 function addFloat(x: number, y: number, text: string, color: string) {
@@ -584,3 +586,11 @@ function frame() {
 document.getElementById("stage-name")!.textContent = stage.name;
 banner(`${stage.name}\n1턴 아군 페이즈`, 1500);
 frame();
+
+// 디버그: ?portraits 로 접속하면 전 유닛 초상화 확인
+if (location.search.includes("portraits")) {
+  const strip = document.createElement("div");
+  strip.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;padding:12px;";
+  for (const u of units) strip.appendChild(getPortrait(u)); // 캐시 공유라 중복 유닛은 한 번만 표시됨
+  document.body.prepend(strip);
+}
