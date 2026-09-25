@@ -18,6 +18,7 @@ import { stage01 } from "./data/stage01";
 import { SPELLS, Spell } from "./data/spells";
 import { ITEMS } from "./data/items";
 import { TRAITS } from "./data/traits";
+import { factionOf } from "./data/factions";
 import { RAGE_MAX, ULTIMATES, Ultimate } from "./data/ultimates";
 import { getPortrait } from "./ui/portraits";
 import { Highlight, Scene3D } from "./render3d/scene";
@@ -82,42 +83,69 @@ function banner(text: string, ms = 1200): Promise<void> {
   );
 }
 
+/** 게이지 바 HTML */
+function barHtml(label: string, val: number, max: number, cls: string): string {
+  const pct = max > 0 ? Math.max(0, Math.min(100, (val / max) * 100)) : 0;
+  return `<div class="bar"><em>${label}</em>
+    <div class="track"><div class="fill ${cls}" style="width:${pct}%"></div></div>
+    <span>${val}/${max}</span></div>`;
+}
+
 function showInfo(u: Unit | null, x?: number, y?: number) {
   if (!u) {
-    if (x !== undefined && y !== undefined) {
-      infoEl.innerHTML = `<b>${TERRAIN_LABEL[terrainAt(stage, x, y)]}</b>`;
-    } else {
-      infoEl.innerHTML = "유닛을 선택하세요";
-    }
+    infoEl.innerHTML = `<div class="placeholder">${
+      x !== undefined && y !== undefined
+        ? `지형 — <b>${TERRAIN_LABEL[terrainAt(stage, x, y)]}</b>`
+        : "유닛을 선택하세요"
+    }</div>`;
     return;
   }
   const job = JOBS[u.job];
-  const spellNames = u.spells.map((s) => SPELLS[s].name).join("·") || "없음";
-  const itemNames = u.items.map((i) => ITEMS[i].name).join("·") || "없음";
-  infoEl.innerHTML = `<div class="pwrap"></div><div class="ptext">
-    <b>${u.name}</b> <span class="cls">${job.name}</span>
-    <span class="title">${CATEGORY_LABEL[job.category]} · 사거리 ${
-      job.range[0] === job.range[1] ? job.range[0] : job.range.join("~")
-    }</span><br>
-    HP ${u.hp}/${u.maxHp} · MP ${u.mp}/${u.maxMp} ·
-    공 ${u.atk} · 방 ${u.def} · 지 ${u.int} · 이동 ${u.mov}${
-      u.buff && u.buff.turns > 0
-        ? ` · <span class="buffed">공+${Math.round(u.buff.pct * 100)}% (${u.buff.turns}턴)</span>`
-        : ""
-    }<br>
-    ${
-      u.trait
-        ? `<span class="trait">★ ${TRAITS[u.trait].name}</span>
-           <span class="sub">${TRAITS[u.trait].desc}</span><br>`
-        : ""
-    }${
-      ULTIMATES[u.id]
-        ? `<span class="ult">⚡ ${ULTIMATES[u.id].name}</span>
-           <span class="sub">기력 ${u.rage}/${RAGE_MAX} — ${ULTIMATES[u.id].desc}</span><br>`
-        : ""
-    }<span class="sub">책략: ${spellNames} · 소지품: ${itemNames} ·
-    지형: ${TERRAIN_LABEL[terrainAt(stage, u.x, u.y)]}</span></div>`;
-  infoEl.querySelector(".pwrap")!.appendChild(getPortrait(u));
+  const fac = factionOf(u.faction);
+  const ult = ULTIMATES[u.id];
+  const spellNames = u.spells.map((s) => SPELLS[s].name).join(" · ") || "없음";
+  const itemNames = u.items.map((i) => ITEMS[i].name).join(" · ") || "없음";
+  const rangeStr = job.range[0] === job.range[1] ? `${job.range[0]}` : job.range.join("~");
+
+  infoEl.innerHTML = `
+    <div class="pwrap"><div class="fchip" style="--fc:${fac.colorCss}">${fac.hanja} ${fac.name}</div></div>
+    <div class="ptext">
+      <div class="hd">
+        <span class="uname">${u.name}</span>
+        <span class="ujob">${job.name}</span>
+        <span class="usub">${CATEGORY_LABEL[job.category]} · 사거리 ${rangeStr} · 이동 ${u.mov}</span>
+        ${
+          u.buff && u.buff.turns > 0
+            ? `<span class="buffchip">공 +${Math.round(u.buff.pct * 100)}% · ${u.buff.turns}턴</span>`
+            : ""
+        }
+      </div>
+      <div class="bars">
+        ${barHtml("HP", u.hp, u.maxHp, "hp")}
+        ${u.maxMp > 0 ? barHtml("MP", u.mp, u.maxMp, "mp") : ""}
+        ${ult ? barHtml("기력", u.rage, RAGE_MAX, "rage") : ""}
+      </div>
+      <div class="statrow">
+        <span class="st"><em>공격</em>${u.atk}</span>
+        <span class="st"><em>방어</em>${u.def}</span>
+        <span class="st"><em>지력</em>${u.int}</span>
+        <span class="st"><em>지형</em>${TERRAIN_LABEL[terrainAt(stage, u.x, u.y)]}</span>
+      </div>
+      ${
+        u.trait
+          ? `<div class="skill"><b class="trait">★ ${TRAITS[u.trait].name}</b>
+             <span class="d">${TRAITS[u.trait].desc}</span></div>`
+          : ""
+      }
+      ${
+        ult
+          ? `<div class="skill"><b class="ult">⚡ ${ult.name}</b>
+             <span class="d">${ult.desc}</span></div>`
+          : ""
+      }
+      <div class="util">책략: ${spellNames} &nbsp;·&nbsp; 소지품: ${itemNames}</div>
+    </div>`;
+  infoEl.querySelector(".pwrap")!.prepend(getPortrait(u));
 }
 
 function addFloat(x: number, y: number, text: string, color: string) {
@@ -557,6 +585,32 @@ endTurnBtn.addEventListener("click", () => {
   startEnemyPhase();
 });
 
+// ── ESC: 선택 취소 / 설정 창 ──────────────────────────────────
+
+const settingsEl = document.getElementById("settings")!;
+
+function toggleSettings(open: boolean) {
+  settingsEl.hidden = !open;
+}
+
+document.getElementById("settings-close")!.addEventListener("click", () => toggleSettings(false));
+settingsEl.addEventListener("click", (e) => {
+  if (e.target === settingsEl) toggleSettings(false); // 바깥 클릭으로 닫기
+});
+
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!settingsEl.hidden) {
+    toggleSettings(false);
+    return;
+  }
+  if (phase === "player" && mode !== "busy" && mode !== "idle") {
+    cancelToOrigin(); // 뭔가 선택 중이면 먼저 취소
+    return;
+  }
+  toggleSettings(true);
+});
+
 // ── 적 AI ──────────────────────────────────────────────────────
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -725,6 +779,10 @@ document.getElementById("stage-name")!.textContent = stage.name;
   // 타임아웃 뒤 늦게 도착한 에셋도 반영 (뷰 재구성)
   void assetsReady.then(() => scene3d.invalidateViews());
 })();
+
+// 디버그: ?select=조조 정보 카드 / ?settings=설정 모달 미리보기
+if (location.search.includes("select")) showInfo(units[0]);
+if (location.search.includes("settings")) toggleSettings(true);
 
 // 디버그: ?portraits 로 접속하면 전 유닛 초상화 확인
 if (location.search.includes("portraits")) {

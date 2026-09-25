@@ -13,6 +13,7 @@ import {
 } from "./models";
 import { GltfInstance, SPRITE_ASSET, hasAsset, heroAssetKey, instantiate } from "./assets";
 import { RAGE_MAX, ULTIMATES } from "../data/ultimates";
+import { factionOf } from "../data/factions";
 
 export interface Highlight {
   cells: Set<string>;
@@ -442,8 +443,31 @@ export class Scene3D {
     root.position.set(this.worldX(u.x), this.tileTop(u.x, u.y), this.worldZ(u.y));
     root.userData.getTile = () => ({ x: u.x, y: u.y });
 
+    // ── 세력 베이스: 색 링 + 반투명 원판 ──
+    const fac = factionOf(u.faction);
+    const facRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.38, 0.02, 6, 28),
+      new THREE.MeshBasicMaterial({ color: fac.color })
+    );
+    facRing.rotation.x = Math.PI / 2;
+    facRing.position.y = 0.018;
+    root.add(facRing);
+    const facDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(0.37, 28),
+      new THREE.MeshBasicMaterial({
+        color: fac.color,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+      })
+    );
+    facDisc.rotation.x = -Math.PI / 2;
+    facDisc.position.y = 0.014;
+    root.add(facDisc);
+
+    // ── 선택 링 (세력 링 바깥, 노란색) ──
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.4, 0.022, 6, 24),
+      new THREE.TorusGeometry(0.47, 0.024, 6, 28),
       new THREE.MeshBasicMaterial({ color: 0xffe14d })
     );
     ring.rotation.x = Math.PI / 2;

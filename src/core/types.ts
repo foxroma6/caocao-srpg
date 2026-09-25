@@ -9,6 +9,7 @@ export interface UnitData {
   id: string;
   name: string; // 표시 이름 (예: 조조)
   job: string; // 직업 id (data/jobs.ts) — 상성·기마·사거리 결정
+  faction: string; // 세력 id (data/factions.ts): wei/shu/wu/yellow/none
   side: Side;
   maxHp: number;
   maxMp: number;
