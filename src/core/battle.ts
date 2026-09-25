@@ -14,10 +14,20 @@ export interface Hit {
   tags: string[]; // 발동한 특성 표시 ("맹장!" 등) — 타격자 위에 띄운다
 }
 
+/** 기력 획득 (최대 100) */
+export function gainRage(u: Unit, amount: number) {
+  u.rage = Math.min(100, u.rage + amount);
+}
+
 /** 특성에 의한 물리 데미지 배율 (타격자 기준) */
 function traitBonus(attacker: Unit, allUnits?: Unit[]): { mult: number; tags: string[] } {
   let mult = 1;
   const tags: string[] = [];
+
+  // 공격력 버프 (패왕령 등)
+  if (attacker.buff && attacker.buff.turns > 0) {
+    mult *= 1 + attacker.buff.pct;
+  }
 
   // 외눈의 맹장: 잃은 HP 비율에 비례해 강해진다 (최대 +50%)
   if (attacker.trait === "oneEyed") {
@@ -80,7 +90,10 @@ export function attackExchange(
     const { damage, tags } = calcHit(stage, attacker, defender, allUnits, scale);
     defender.hp = Math.max(0, defender.hp - damage);
     if (extraTag) tags.unshift(extraTag);
-    hits.push({ target: defender, damage, killed: defender.hp === 0, counter: false, tags });
+    const killed = defender.hp === 0;
+    gainRage(attacker, killed ? 50 : 30);
+    gainRage(defender, 20);
+    hits.push({ target: defender, damage, killed, counter: false, tags });
   };
 
   strike(1);
@@ -97,6 +110,8 @@ export function attackExchange(
     if (d >= lo && d <= hi) {
       const { damage, tags } = calcHit(stage, defender, attacker, allUnits, 0.75);
       attacker.hp = Math.max(0, attacker.hp - damage);
+      gainRage(defender, 10);
+      gainRage(attacker, 15);
       hits.push({ target: attacker, damage, killed: attacker.hp === 0, counter: true, tags });
     }
   }
@@ -123,6 +138,7 @@ export function spellHitChance(caster: Unit, target: Unit): number {
  */
 export function castSpell(caster: Unit, spell: Spell, target: Unit): SpellResult {
   caster.mp -= spell.mp;
+  gainRage(caster, 15);
   const tags: string[] = [];
 
   if (spell.kind === "heal") {
@@ -149,7 +165,40 @@ export function castSpell(caster: Unit, spell: Spell, target: Unit): SpellResult
     Math.round((caster.int * spell.power - target.int * 0.5) * mult * variance)
   );
   target.hp = Math.max(0, target.hp - amount);
+  gainRage(target, 15);
   return { missed: false, amount, killed: target.hp === 0, tags };
+}
+
+// ── 필살기 ─────────────────────────────────────────────────────
+
+export interface UltHit {
+  damage: number;
+  killed: boolean;
+}
+
+/**
+ * 필살기 타격: 위력 배율 적용, 반격 없음.
+ * ignoreGuard=true면 지형 방어를 무시한다. 특성·버프 배율도 적용.
+ */
+export function ultimateStrike(
+  stage: Stage,
+  attacker: Unit,
+  defender: Unit,
+  scale: number,
+  ignoreGuard: boolean,
+  allUnits?: Unit[]
+): UltHit {
+  const aff = affinity(JOBS[attacker.job].category, JOBS[defender.job].category);
+  const guard = ignoreGuard ? 1 : terrainGuard(terrainAt(stage, defender.x, defender.y));
+  const { mult } = traitBonus(attacker, allUnits);
+  const variance = 0.9 + Math.random() * 0.2;
+  const damage = Math.max(
+    1,
+    Math.round((attacker.atk * aff * guard - defender.def * 0.6) * mult * scale * variance)
+  );
+  defender.hp = Math.max(0, defender.hp - damage);
+  gainRage(defender, 15);
+  return { damage, killed: defender.hp === 0 };
 }
 
 // ── 아이템 ─────────────────────────────────────────────────────

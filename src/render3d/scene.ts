@@ -12,6 +12,7 @@ import {
   escortSprite,
 } from "./models";
 import { GltfInstance, SPRITE_ASSET, hasAsset, instantiate } from "./assets";
+import { RAGE_MAX, ULTIMATES } from "../data/ultimates";
 
 export interface Highlight {
   cells: Set<string>;
@@ -477,10 +478,15 @@ export class Scene3D {
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, 64, 12);
     ctx.fillStyle = "rgba(0,0,0,0.65)";
-    ctx.fillRect(0, 2, 64, 8);
+    ctx.fillRect(0, 1, 64, 10);
     const ratio = Math.max(0, u.hp / u.maxHp);
     ctx.fillStyle = ratio > 0.4 ? "#4ddb66" : "#ffb347";
-    ctx.fillRect(2, 4, 60 * ratio, 4);
+    ctx.fillRect(2, 3, 60 * ratio, 4);
+    // 영웅 기력 게이지 (필살기)
+    if (ULTIMATES[u.id]) {
+      ctx.fillStyle = u.rage >= RAGE_MAX ? "#ffe14d" : "#c8a020";
+      ctx.fillRect(2, 8, 60 * (u.rage / RAGE_MAX), 2);
+    }
   }
 
   // ── 애니메이션 ───────────────────────────────────────────────
@@ -650,9 +656,10 @@ export class Scene3D {
 
       view.ring.visible = u === selected;
 
-      // ── HP 바 ──
-      if (view.lastHp !== u.hp) {
-        view.lastHp = u.hp;
+      // ── HP/기력 바 ──
+      const barKey = u.hp * 1000 + u.rage;
+      if (view.lastHp !== barKey) {
+        view.lastHp = barKey;
         this.drawHpBar(view.hpCanvas, u);
         (view.hpSprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
       }

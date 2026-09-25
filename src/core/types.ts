@@ -27,6 +27,8 @@ export interface Unit extends UnitData {
   hp: number;
   mp: number;
   acted: boolean; // 이번 턴 행동 완료 여부
+  rage: number; // 기력 (0~100): 필살기 게이지
+  buff?: { pct: number; turns: number }; // 공격력 버프 (패왕령 등)
 }
 
 export interface Stage {

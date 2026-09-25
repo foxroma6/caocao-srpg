@@ -2,6 +2,7 @@ import {
   attackExchange,
   castSpell,
   spellHitChance,
+  ultimateStrike,
   useItem,
 } from "./core/battle";
 import {
@@ -17,6 +18,7 @@ import { stage01 } from "./data/stage01";
 import { SPELLS, Spell } from "./data/spells";
 import { ITEMS } from "./data/items";
 import { TRAITS } from "./data/traits";
+import { RAGE_MAX, ULTIMATES, Ultimate } from "./data/ultimates";
 import { getPortrait } from "./ui/portraits";
 import { Highlight, Scene3D } from "./render3d/scene";
 import { loadAssets } from "./render3d/assets";
@@ -30,6 +32,7 @@ type Mode =
   | "menu" // 행동 메뉴 (공격/책략/아이템/대기)
   | "attackSelect" // 공격 대상 선택
   | "spellSelect" // 책략 대상 선택
+  | "ultSelect" // 필살기 대상 선택
   | "busy"; // 연출 중 입력 잠금
 
 const stage: Stage = stage01;
@@ -40,6 +43,7 @@ const units: Unit[] = stage.units.map((u) => ({
   hp: u.maxHp,
   mp: u.maxMp,
   acted: false,
+  rage: 0,
 }));
 
 const wrap = document.getElementById("wrap")!;
@@ -57,6 +61,7 @@ let moveRange: Map<string, number> | null = null;
 let targetCells: Set<string> | null = null; // 공격/책략 대상 칸
 let targetStyle = { color: 0xff4646, opacity: 0.5 };
 let pendingSpell: Spell | null = null;
+let pendingUlt: Ultimate | null = null;
 let origin: { x: number; y: number } | null = null; // 이동 전 위치 (취소용)
 let cursor: { x: number; y: number } | null = null;
 
@@ -95,11 +100,20 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
       job.range[0] === job.range[1] ? job.range[0] : job.range.join("~")
     }</span><br>
     HP ${u.hp}/${u.maxHp} · MP ${u.mp}/${u.maxMp} ·
-    공 ${u.atk} · 방 ${u.def} · 지 ${u.int} · 이동 ${u.mov}<br>
+    공 ${u.atk} · 방 ${u.def} · 지 ${u.int} · 이동 ${u.mov}${
+      u.buff && u.buff.turns > 0
+        ? ` · <span class="buffed">공+${Math.round(u.buff.pct * 100)}% (${u.buff.turns}턴)</span>`
+        : ""
+    }<br>
     ${
       u.trait
         ? `<span class="trait">★ ${TRAITS[u.trait].name}</span>
            <span class="sub">${TRAITS[u.trait].desc}</span><br>`
+        : ""
+    }${
+      ULTIMATES[u.id]
+        ? `<span class="ult">⚡ ${ULTIMATES[u.id].name}</span>
+           <span class="sub">기력 ${u.rage}/${RAGE_MAX} — ${ULTIMATES[u.id].desc}</span><br>`
         : ""
     }<span class="sub">책략: ${spellNames} · 소지품: ${itemNames} ·
     지형: ${TERRAIN_LABEL[terrainAt(stage, u.x, u.y)]}</span></div>`;
@@ -156,6 +170,7 @@ function deselect() {
   moveRange = null;
   targetCells = null;
   pendingSpell = null;
+  pendingUlt = null;
   origin = null;
   mode = "idle";
   hideMenu();
@@ -216,6 +231,13 @@ function spellTargets(u: Unit, spell: Spell): Set<string> {
   return out;
 }
 
+/** dist칸 이내의 적 유닛 목록 */
+function enemiesWithin(u: Unit, dist: number): Unit[] {
+  return alive(u.side === "player" ? "enemy" : "player").filter(
+    (t) => manhattan(t, u) <= dist
+  );
+}
+
 // ── 메인 행동 메뉴 구성 ────────────────────────────────────────
 
 function openActionMenu(u: Unit) {
@@ -228,6 +250,14 @@ function openActionMenu(u: Unit) {
     .map((id) => SPELLS[id])
     .filter((s) => u.mp >= s.mp && spellTargets(u, s).size > 0);
 
+  const ult = ULTIMATES[u.id];
+  const ultReady =
+    ult &&
+    u.rage >= RAGE_MAX &&
+    (ult.kind === "buff" ||
+      (ult.kind === "strike" && enemiesInWeaponRange(u).size > 0) ||
+      (ult.kind === "volley" && enemiesWithin(u, 3).length > 0));
+
   const entries: MenuEntry[] = [
     {
       label: "⚔ 공격",
@@ -239,6 +269,27 @@ function openActionMenu(u: Unit) {
         hideMenu();
       },
     },
+    ...(ult
+      ? [
+          {
+            label: `⚡ ${ult.name.split("(")[0]}`,
+            sub: `기 ${u.rage}/${RAGE_MAX}`,
+            disabled: !ultReady,
+            onClick: () => {
+              if (ult.kind === "strike") {
+                pendingUlt = ult;
+                targetCells = enemiesInWeaponRange(u);
+                targetStyle = { color: 0xffd24d, opacity: 0.6 };
+                mode = "ultSelect";
+                hideMenu();
+              } else {
+                hideMenu();
+                void doUltimate(u, ult, null);
+              }
+            },
+          },
+        ]
+      : []),
     {
       label: "📜 책략",
       disabled: usableSpells.length === 0,
@@ -298,6 +349,46 @@ function openItemMenu(u: Unit) {
   });
   entries.push({ label: "← 돌아가기", onClick: () => openActionMenu(u) });
   showMenu(u, entries);
+}
+
+// ── 필살기 실행 ────────────────────────────────────────────────
+
+async function doUltimate(u: Unit, ult: Ultimate, target: Unit | null) {
+  mode = "busy";
+  targetCells = null;
+  u.rage = 0;
+  await banner(`⚡ ${ult.name} ⚡`, 800);
+
+  if (ult.kind === "buff") {
+    // 패왕령: 3칸 내 아군 (자신 포함) 공격력 버프
+    const allies = alive(u.side).filter((a) => manhattan(a, u) <= 3);
+    for (const a of allies) {
+      a.buff = { pct: 0.3, turns: 2 };
+      addFloat(a.x, a.y, "공격력 +30%!", "#ffd24d");
+      await sleep(120);
+    }
+  } else if (ult.kind === "strike" && target) {
+    // 귀신참: 지형 무시 250% 일격
+    await scene3d.attackAnim(u, target, 1.5);
+    const hit = ultimateStrike(stage, u, target, 2.5, true, units);
+    addFloat(target.x, target.y, `-${hit.damage}!!`, "#ffd24d");
+    if (hit.killed) addFloat(target.x, target.y, "격파!", "#ff8080");
+  } else if (ult.kind === "volley") {
+    // 천리연사: 3칸 내 모든 적에게 화살 세례
+    const targets = enemiesWithin(u, 3);
+    if (targets.length > 0) {
+      await scene3d.attackAnim(u, targets[0], 1.2);
+      for (const t of targets) {
+        const hit = ultimateStrike(stage, u, t, 0.8, false, units);
+        addFloat(t.x, t.y, `-${hit.damage}`, "#ffd24d");
+        if (hit.killed) addFloat(t.x, t.y, "격파!", "#ff8080");
+        await sleep(180);
+      }
+    }
+  }
+
+  await sleep(400);
+  finishAction(u);
 }
 
 // ── 전투 실행 ──────────────────────────────────────────────────
@@ -423,6 +514,20 @@ scene3d.domElement.addEventListener("click", (e) => {
       }
       return;
     }
+
+    case "ultSelect": {
+      if (!selected || !pendingUlt) return;
+      const target = unitAt(x, y);
+      if (target && targetCells?.has(key(x, y))) {
+        const ult = pendingUlt;
+        pendingUlt = null;
+        void doUltimate(selected, ult, target);
+      } else {
+        pendingUlt = null;
+        openActionMenu(selected);
+      }
+      return;
+    }
   }
 });
 
@@ -469,7 +574,14 @@ async function startEnemyPhase() {
   }
 
   turn++;
-  for (const u of units) u.acted = false;
+  for (const u of units) {
+    u.acted = false;
+    // 버프 지속시간 감소
+    if (u.buff && --u.buff.turns <= 0) {
+      if (u.hp > 0) addFloat(u.x, u.y, "버프 종료", "#9aa3b5");
+      delete u.buff;
+    }
+  }
   phase = "player";
   await banner(`${turn}턴 아군 페이즈`);
 }
