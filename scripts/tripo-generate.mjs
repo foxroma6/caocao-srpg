@@ -18,39 +18,41 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const API = "https://api.tripo3d.ai/v2/openapi";
 
-// ── 프리셋: KOEI풍 삼국지 영웅 프롬프트 ─────────────────────────
+// ── 프리셋: 애니메이션풍 치비(SD) 삼국지 영웅 프롬프트 ──────────
+// 랑그릿사류 SRPG 유닛 느낌: 귀여운 비율 + 특징만 깔끔하게
 const STYLE =
-  "low poly stylized 3D game character, hand-painted texture, " +
-  "isometric strategy RPG asset, clean silhouette, single character, full body";
+  "chibi anime style 3D game character, cute super-deformed proportions with large head, " +
+  "clean cel-shaded hand-painted texture, vibrant colors, anime tactical RPG unit, " +
+  "smooth simple shapes, single character, full body, standing on flat ground";
 
 const HEROES = {
   caocao: {
     name: "hero_caocao",
     prompt:
-      `Chinese Three Kingdoms warlord Cao Cao riding a white horse, ` +
-      `ornate dark navy and gold armor, flowing red cape, golden crown, ` +
-      `sharp goatee beard, commanding pose, ${STYLE}`,
+      `Cute chibi anime warlord Cao Cao from Three Kingdoms riding a small white horse, ` +
+      `dark navy and gold ornate armor, flowing red cape, small golden crown, ` +
+      `confident smirk, tiny goatee beard, ${STYLE}`,
   },
   xiahoudun: {
     name: "hero_xiahoudun",
     prompt:
-      `Fierce Chinese Three Kingdoms general Xiahou Dun, black eyepatch over right eye, ` +
-      `full black beard, heavy steel-blue plate armor with shoulder pauldrons, ` +
-      `holding a large guandao polearm, battle stance, ${STYLE}`,
+      `Cute chibi anime general Xiahou Dun from Three Kingdoms, black eyepatch over one eye, ` +
+      `short black beard, steel-blue plate armor with big shoulder pauldrons, ` +
+      `holding an oversized guandao polearm, determined expression, ${STYLE}`,
   },
   xiahouyuan: {
     name: "hero_xiahouyuan",
     prompt:
-      `Agile Chinese Three Kingdoms archer general Xiahou Yuan riding a brown horse, ` +
-      `blue leather lamellar armor, red headband, short beard, ` +
-      `holding a large recurve bow, quiver on back, ${STYLE}`,
+      `Cute chibi anime archer general Xiahou Yuan from Three Kingdoms riding a small brown horse, ` +
+      `blue leather armor, red headband, cheerful grin, ` +
+      `holding an oversized bow, small quiver on back, ${STYLE}`,
   },
   taoist: {
     name: "hero_taoist",
     prompt:
-      `Yellow Turban rebellion taoist sorcerer Zhang Jiao, long grey beard, ` +
-      `tattered yellow hooded robe, holding a gnarled wooden staff with glowing orb, ` +
-      `mystical pose, ${STYLE}`,
+      `Cute chibi anime taoist sorcerer with long grey beard, ` +
+      `yellow hooded robe, holding a wooden staff with glowing purple orb, ` +
+      `mysterious smile, ${STYLE}`,
   },
 };
 
