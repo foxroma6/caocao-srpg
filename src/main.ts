@@ -717,14 +717,13 @@ document.getElementById("stage-name")!.textContent = stage.name;
   // GLTF 병사 모델 프리로드 (실패해도 절차 모델로 진행)
   bannerEl.textContent = "부대 편성 중…";
   bannerEl.classList.add("show");
-  try {
-    await Promise.race([loadAssets(), sleep(8000)]);
-  } catch {
-    /* 절차 모델 폴백 */
-  }
+  const assetsReady = loadAssets().catch(() => {});
+  await Promise.race([assetsReady, sleep(8000)]);
   bannerEl.classList.remove("show");
   banner(`${stage.name}\n1턴 아군 페이즈`, 1500);
   frame();
+  // 타임아웃 뒤 늦게 도착한 에셋도 반영 (뷰 재구성)
+  void assetsReady.then(() => scene3d.invalidateViews());
 })();
 
 // 디버그: ?portraits 로 접속하면 전 유닛 초상화 확인

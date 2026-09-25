@@ -675,6 +675,12 @@ export class Scene3D {
     }
   }
 
+  /** 에셋이 늦게 로드됐을 때 모든 유닛 뷰를 새 에셋으로 재구성 */
+  invalidateViews() {
+    for (const v of this.views.values()) this.scene.remove(v.root);
+    this.views.clear();
+  }
+
   // ── 플로팅 텍스트 (HTML 오버레이) ────────────────────────────
 
   floatText(x: number, y: number, text: string, color: string) {

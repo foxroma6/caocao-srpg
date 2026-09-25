@@ -60,7 +60,8 @@ export async function loadAssets(): Promise<void> {
           faceFix: spec.faceFix ?? FACE_FIX,
         });
       } catch (e) {
-        if (!spec.optional) console.warn(`GLTF 로드 실패(${key}) — 절차 모델로 대체:`, e);
+        const log = spec.optional ? console.info : console.warn;
+        log(`GLTF 로드 실패(${key}) — 절차 모델로 대체:`, e);
       }
     })
   );
@@ -92,6 +93,9 @@ export function instantiate(key: string): GltfInstance | null {
   const model = skeletonClone(asset.scene);
   model.scale.setScalar(asset.normScale);
   model.rotation.y = asset.faceFix;
+  // 발밑을 y=0에 맞춤 (원점 중심으로 내보내진 모델 대응)
+  const bounds = new THREE.Box3().setFromObject(model);
+  model.position.y -= bounds.min.y;
 
   const materials: THREE.MeshStandardMaterial[] = [];
   model.traverse((o) => {
