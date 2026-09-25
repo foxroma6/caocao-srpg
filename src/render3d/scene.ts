@@ -11,7 +11,7 @@ import {
   collectMaterials,
   escortSprite,
 } from "./models";
-import { GltfInstance, SPRITE_ASSET, hasAsset, instantiate } from "./assets";
+import { GltfInstance, SPRITE_ASSET, hasAsset, heroAssetKey, instantiate } from "./assets";
 import { RAGE_MAX, ULTIMATES } from "../data/ultimates";
 
 export interface Highlight {
@@ -388,20 +388,30 @@ export class Scene3D {
     };
   }
 
-  /** GLTF 우선, 없으면 절차 모델 */
+  /** AI 생성 영웅 > 병종 GLTF > 절차 모델 순으로 선택 */
   private buildMember(u: Unit, role: "leader" | "escort"): Actor {
     const sprite = role === "leader" ? JOBS[u.job].sprite : escortSprite(u);
-    const useGltf =
-      !(role === "leader" && (NAMED_IDS.has(u.id) || sprite === "taoist")) &&
-      hasAsset(SPRITE_ASSET[sprite]);
 
     const holder = new THREE.Group();
     let gltf: GltfInstance | undefined;
-    if (useGltf) {
-      gltf = instantiate(SPRITE_ASSET[sprite])!;
+
+    // 1) AI 생성 영웅 모델 (리더 전용)
+    const heroKey = role === "leader" ? heroAssetKey(u.id) : null;
+    if (heroKey) {
+      gltf = instantiate(heroKey)!;
       holder.add(gltf.root);
     } else {
-      holder.add(role === "leader" ? buildLeader(u) : buildProcEscort(u));
+      // 2) 병종 GLTF (전용 캐릭터·도사 리더 제외)
+      const useGltf =
+        !(role === "leader" && (NAMED_IDS.has(u.id) || sprite === "taoist")) &&
+        hasAsset(SPRITE_ASSET[sprite]);
+      if (useGltf) {
+        gltf = instantiate(SPRITE_ASSET[sprite])!;
+        holder.add(gltf.root);
+      } else {
+        // 3) 절차 모델
+        holder.add(role === "leader" ? buildLeader(u) : buildProcEscort(u));
+      }
     }
     return this.makeActor(holder, gltf, role === "escort");
   }
@@ -617,10 +627,9 @@ export class Scene3D {
       // ── 개체 애니메이션 ──
       for (const a of view.actors) {
         this.setLoco(a, walking ? "walk" : "idle");
-        if (a.gltf) {
-          a.gltf.mixer.update(dt);
-        } else {
-          // 절차 모델: 봅 + 걸음 흔들림
+        if (a.gltf) a.gltf.mixer.update(dt);
+        // 클립이 없는 모델(절차 모델, 정적 AI 생성 모델)은 봅 + 걸음 흔들림
+        if (!a.gltf || !a.gltf.actions.idle) {
           const amp = walking ? 0.028 : 0.008;
           const freq = walking ? 11 : 2.4;
           a.inner.position.y = Math.abs(Math.sin(this.time * freq + a.phase)) * amp;

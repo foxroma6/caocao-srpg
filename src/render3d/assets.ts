@@ -9,17 +9,30 @@ import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.j
 interface Asset {
   scene: THREE.Group;
   clips: THREE.AnimationClip[];
-  normScale: number; // 캐릭터 키를 월드 기준(0.62)으로 정규화
+  normScale: number; // 목표 키(targetH)로 정규화
+  faceFix: number;
 }
 
 const REGISTRY = new Map<string, Asset>();
 
+interface FileSpec {
+  url: string;
+  targetH?: number; // 월드 기준 목표 키 (기본 0.62)
+  faceFix?: number; // 기본 +Z → +X 회전 (π/2)
+  optional?: boolean; // 없어도 조용히 넘어감 (AI 생성 영웅 등)
+}
+
 /** GLB 파일 목록 (public/models/) */
-const FILES: Record<string, string> = {
-  knight: "models/Knight.glb",
-  barbarian: "models/Barbarian.glb",
-  mage: "models/Mage.glb",
-  rogue: "models/Rogue_Hooded.glb",
+const FILES: Record<string, FileSpec> = {
+  knight: { url: "models/Knight.glb" },
+  barbarian: { url: "models/Barbarian.glb" },
+  mage: { url: "models/Mage.glb" },
+  rogue: { url: "models/Rogue_Hooded.glb" },
+  // ── AI 생성 영웅 (scripts/tripo-generate.mjs 로 생성 시 자동 적용) ──
+  "hero:caocao": { url: "models/hero_caocao.glb", targetH: 0.95, optional: true },
+  "hero:xiahoudun": { url: "models/hero_xiahoudun.glb", targetH: 0.68, optional: true },
+  "hero:xiahouyuan": { url: "models/hero_xiahouyuan.glb", targetH: 0.95, optional: true },
+  "hero:yb5": { url: "models/hero_taoist.glb", targetH: 0.68, optional: true },
 };
 
 /** 유닛 sprite → GLTF 에셋 매핑 (보행 유닛만; 기마·전용 캐릭터는 절차 모델) */
@@ -35,18 +48,19 @@ const FACE_FIX = Math.PI / 2;
 export async function loadAssets(): Promise<void> {
   const loader = new GLTFLoader();
   await Promise.all(
-    Object.entries(FILES).map(async ([key, url]) => {
+    Object.entries(FILES).map(async ([key, spec]) => {
       try {
-        const gltf = await loader.loadAsync(import.meta.env.BASE_URL + url);
+        const gltf = await loader.loadAsync(import.meta.env.BASE_URL + spec.url);
         const box = new THREE.Box3().setFromObject(gltf.scene);
         const h = Math.max(0.001, box.max.y - box.min.y);
         REGISTRY.set(key, {
           scene: gltf.scene,
           clips: gltf.animations,
-          normScale: 0.62 / h,
+          normScale: (spec.targetH ?? 0.62) / h,
+          faceFix: spec.faceFix ?? FACE_FIX,
         });
       } catch (e) {
-        console.warn(`GLTF 로드 실패(${key}) — 절차 모델로 대체:`, e);
+        if (!spec.optional) console.warn(`GLTF 로드 실패(${key}) — 절차 모델로 대체:`, e);
       }
     })
   );
@@ -54,6 +68,12 @@ export async function loadAssets(): Promise<void> {
 
 export function hasAsset(key: string | null | undefined): boolean {
   return !!key && REGISTRY.has(key);
+}
+
+/** AI 생성 영웅 모델 키 (없으면 null → 절차 모델 사용) */
+export function heroAssetKey(unitId: string): string | null {
+  const key = `hero:${unitId}`;
+  return REGISTRY.has(key) ? key : null;
 }
 
 export type ClipRole = "idle" | "walk" | "attack" | "death";
@@ -71,7 +91,7 @@ export function instantiate(key: string): GltfInstance | null {
 
   const model = skeletonClone(asset.scene);
   model.scale.setScalar(asset.normScale);
-  model.rotation.y = FACE_FIX;
+  model.rotation.y = asset.faceFix;
 
   const materials: THREE.MeshStandardMaterial[] = [];
   model.traverse((o) => {
