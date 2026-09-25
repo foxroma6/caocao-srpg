@@ -19,6 +19,7 @@ import { SPELLS, Spell } from "./data/spells";
 import { ITEMS } from "./data/items";
 import { TRAITS } from "./data/traits";
 import { factionOf } from "./data/factions";
+import { EXP_MAX, applyLevelUp } from "./core/growth";
 import { RAGE_MAX, ULTIMATES, Ultimate } from "./data/ultimates";
 import { getPortrait } from "./ui/portraits";
 import { Highlight, Scene3D } from "./render3d/scene";
@@ -45,6 +46,8 @@ const units: Unit[] = stage.units.map((u) => ({
   mp: u.maxMp,
   acted: false,
   rage: 0,
+  level: u.level ?? 1,
+  exp: 0,
 }));
 
 const wrap = document.getElementById("wrap")!;
@@ -111,6 +114,7 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
     <div class="pwrap"><div class="fchip" style="--fc:${fac.colorCss}">${fac.hanja} ${fac.name}</div></div>
     <div class="ptext">
       <div class="hd">
+        <span class="ulv">Lv.${u.level}</span>
         <span class="uname">${u.name}</span>
         <span class="ujob">${job.name}</span>
         <span class="usub">${CATEGORY_LABEL[job.category]} · 사거리 ${rangeStr} · 이동 ${u.mov}</span>
@@ -124,6 +128,7 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
         ${barHtml("HP", u.hp, u.maxHp, "hp")}
         ${u.maxMp > 0 ? barHtml("MP", u.mp, u.maxMp, "mp") : ""}
         ${ult ? barHtml("기력", u.rage, RAGE_MAX, "rage") : ""}
+        ${u.side === "player" ? barHtml("EXP", u.exp, EXP_MAX, "exp") : ""}
       </div>
       <div class="statrow">
         <span class="st"><em>공격</em>${u.atk}</span>
@@ -228,8 +233,22 @@ function checkGameOver(): boolean {
   return false;
 }
 
+/** 쌓인 경험치로 레벨업 처리 (아군 전원) */
+function processLevelUps() {
+  for (const u of alive("player")) {
+    while (u.exp >= EXP_MAX) {
+      u.exp -= EXP_MAX;
+      const gains = applyLevelUp(u);
+      addFloat(u.x, u.y, `LEVEL UP! Lv.${u.level}`, "#ffe14d");
+      const summary = gains.map((g) => `${g.label}+${g.amount}`).join(" ");
+      setTimeout(() => addFloat(u.x, u.y, summary, "#a8e8b0"), 450);
+    }
+  }
+}
+
 function finishAction(u: Unit) {
   u.acted = true;
+  processLevelUps();
   deselect();
   showInfo(u);
   if (checkGameOver()) return;
@@ -623,6 +642,7 @@ async function startEnemyPhase() {
   for (const e of alive("enemy")) {
     if (phase !== "enemy") return;
     await enemyAct(e);
+    processLevelUps(); // 반격으로 얻은 경험치
     await sleep(350);
     if (checkGameOver()) return;
   }

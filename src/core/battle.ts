@@ -1,5 +1,6 @@
 import { Stage, Unit, terrainGuard } from "./types";
 import { manhattan, terrainAt } from "./grid";
+import { gainExp } from "./growth";
 import { JOBS, affinity } from "../data/jobs";
 import { Spell } from "../data/spells";
 import { Item } from "../data/items";
@@ -93,6 +94,7 @@ export function attackExchange(
     const killed = defender.hp === 0;
     gainRage(attacker, killed ? 50 : 30);
     gainRage(defender, 20);
+    gainExp(attacker, defender, Math.min(40, 12 + damage * 0.5) + (killed ? 30 : 0));
     hits.push({ target: defender, damage, killed, counter: false, tags });
   };
 
@@ -112,6 +114,7 @@ export function attackExchange(
       attacker.hp = Math.max(0, attacker.hp - damage);
       gainRage(defender, 10);
       gainRage(attacker, 15);
+      gainExp(defender, attacker, Math.min(20, 6 + damage * 0.3) + (attacker.hp === 0 ? 30 : 0));
       hits.push({ target: attacker, damage, killed: attacker.hp === 0, counter: true, tags });
     }
   }
@@ -145,6 +148,7 @@ export function castSpell(caster: Unit, spell: Spell, target: Unit): SpellResult
     const amount = Math.round(caster.int * spell.power);
     const healed = Math.min(amount, target.maxHp - target.hp);
     target.hp += healed;
+    gainExp(caster, caster, Math.min(30, 12 + healed * 0.4));
     return { missed: false, amount: healed, killed: false, tags };
   }
 
@@ -166,6 +170,7 @@ export function castSpell(caster: Unit, spell: Spell, target: Unit): SpellResult
   );
   target.hp = Math.max(0, target.hp - amount);
   gainRage(target, 15);
+  gainExp(caster, target, Math.min(40, 15 + amount * 0.5) + (target.hp === 0 ? 30 : 0));
   return { missed: false, amount, killed: target.hp === 0, tags };
 }
 
@@ -198,7 +203,9 @@ export function ultimateStrike(
   );
   defender.hp = Math.max(0, defender.hp - damage);
   gainRage(defender, 15);
-  return { damage, killed: defender.hp === 0 };
+  const killed = defender.hp === 0;
+  gainExp(attacker, defender, Math.min(40, 12 + damage * 0.5) + (killed ? 30 : 0));
+  return { damage, killed };
 }
 
 // ── 아이템 ─────────────────────────────────────────────────────

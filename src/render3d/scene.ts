@@ -86,8 +86,8 @@ export class Scene3D {
   private time = 0;
 
   constructor(public container: HTMLElement, public stage: Stage) {
-    const W = 800;
-    const H = 600;
+    const W = 880;
+    const H = 620;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(W, H);
