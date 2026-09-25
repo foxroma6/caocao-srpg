@@ -11,11 +11,12 @@ import {
   movementRange,
   terrainAt,
 } from "./core/grid";
-import { CLASS_LABEL, Stage, TERRAIN_LABEL, Unit } from "./core/types";
+import { Stage, TERRAIN_LABEL, Unit } from "./core/types";
+import { CATEGORY_LABEL, JOBS } from "./data/jobs";
 import { stage01 } from "./data/stage01";
 import { SPELLS, Spell } from "./data/spells";
 import { ITEMS } from "./data/items";
-import { FloatText, Highlight, Renderer, TILE } from "./render/renderer";
+import { Highlight, Scene3D } from "./render3d/scene";
 
 // ── 게임 상태 ──────────────────────────────────────────────────
 
@@ -38,8 +39,8 @@ const units: Unit[] = stage.units.map((u) => ({
   acted: false,
 }));
 
-const canvas = document.getElementById("game") as HTMLCanvasElement;
-const renderer = new Renderer(canvas, stage);
+const wrap = document.getElementById("wrap")!;
+const scene3d = new Scene3D(wrap, stage);
 const infoEl = document.getElementById("info")!;
 const bannerEl = document.getElementById("banner")!;
 const menuEl = document.getElementById("menu")!;
@@ -51,11 +52,10 @@ let turn = 1;
 let selected: Unit | null = null;
 let moveRange: Map<string, number> | null = null;
 let targetCells: Set<string> | null = null; // 공격/책략 대상 칸
-let targetColor = "rgba(255,70,70,0.45)";
+let targetStyle = { color: 0xff4646, opacity: 0.5 };
 let pendingSpell: Spell | null = null;
 let origin: { x: number; y: number } | null = null; // 이동 전 위치 (취소용)
 let cursor: { x: number; y: number } | null = null;
-const floats: FloatText[] = [];
 
 const alive = (side: string) => units.filter((u) => u.side === side && u.hp > 0);
 const unitAt = (x: number, y: number) =>
@@ -83,11 +83,14 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
     }
     return;
   }
+  const job = JOBS[u.job];
   const spellNames = u.spells.map((s) => SPELLS[s].name).join("·") || "없음";
   const itemNames = u.items.map((i) => ITEMS[i].name).join("·") || "없음";
   infoEl.innerHTML = `
-    <b>${u.name}</b> <span class="title">${u.title}</span>
-    <span class="cls">${CLASS_LABEL[u.cls]}</span><br>
+    <b>${u.name}</b> <span class="cls">${job.name}</span>
+    <span class="title">${CATEGORY_LABEL[job.category]} · 사거리 ${
+      job.range[0] === job.range[1] ? job.range[0] : job.range.join("~")
+    }</span><br>
     HP ${u.hp}/${u.maxHp} · MP ${u.mp}/${u.maxMp} ·
     공 ${u.atk} · 방 ${u.def} · 지 ${u.int} · 이동 ${u.mov}<br>
     <span class="sub">책략: ${spellNames} · 소지품: ${itemNames} ·
@@ -95,7 +98,7 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
 }
 
 function addFloat(x: number, y: number, text: string, color: string) {
-  floats.push({ x, y, text, color, life: 40 });
+  scene3d.floatText(x, y, text, color);
 }
 
 // ── 행동 메뉴 ──────────────────────────────────────────────────
@@ -119,17 +122,15 @@ function showMenu(u: Unit, entries: MenuEntry[]) {
     });
     menuEl.appendChild(btn);
   }
-  // 유닛 옆에 배치 (캔버스 표시 배율 반영)
-  const scale = canvas.getBoundingClientRect().width / canvas.width;
-  let left = (u.x + 1) * TILE * scale + 8;
-  let top = u.y * TILE * scale;
+  const { px, py } = scene3d.project(u.x, u.y);
   menuEl.style.display = "flex";
-  const wrapW = canvas.getBoundingClientRect().width;
+  const rect = scene3d.domElement.getBoundingClientRect();
+  let left = px + 36;
+  let top = py - 20;
   const mw = menuEl.offsetWidth;
   const mh = menuEl.offsetHeight;
-  if (left + mw > wrapW) left = u.x * TILE * scale - mw - 8;
-  const wrapH = canvas.getBoundingClientRect().height;
-  if (top + mh > wrapH) top = wrapH - mh - 4;
+  if (left + mw > rect.width) left = px - mw - 36;
+  if (top + mh > rect.height) top = rect.height - mh - 4;
   menuEl.style.left = `${Math.max(0, left)}px`;
   menuEl.style.top = `${Math.max(0, top)}px`;
 }
@@ -186,7 +187,7 @@ function finishAction(u: Unit) {
 /** 무기 사거리 내 적 칸 집합 */
 function enemiesInWeaponRange(u: Unit): Set<string> {
   const out = new Set<string>();
-  for (const c of attackCells(stage, u.x, u.y, u.range)) {
+  for (const c of attackCells(stage, u.x, u.y, JOBS[u.job].range)) {
     const t = unitAt(c.x, c.y);
     if (t && t.side !== u.side) out.add(key(c.x, c.y));
   }
@@ -224,7 +225,7 @@ function openActionMenu(u: Unit) {
       disabled: !canAttack,
       onClick: () => {
         targetCells = enemiesInWeaponRange(u);
-        targetColor = "rgba(255,70,70,0.45)";
+        targetStyle = { color: 0xff4646, opacity: 0.5 };
         mode = "attackSelect";
         hideMenu();
       },
@@ -258,8 +259,10 @@ function openSpellMenu(u: Unit) {
       onClick: () => {
         pendingSpell = s;
         targetCells = spellTargets(u, s);
-        targetColor =
-          s.kind === "heal" ? "rgba(80,220,120,0.5)" : "rgba(200,80,255,0.5)";
+        targetStyle =
+          s.kind === "heal"
+            ? { color: 0x50dc78, opacity: 0.55 }
+            : { color: 0xc850ff, opacity: 0.55 };
         mode = "spellSelect";
         hideMenu();
       },
@@ -328,11 +331,11 @@ async function doSpell(caster: Unit, spell: Spell, target: Unit) {
 
 // ── 플레이어 입력 ──────────────────────────────────────────────
 
-canvas.addEventListener("click", (e) => {
+scene3d.domElement.addEventListener("click", (e) => {
   if (phase !== "player" || mode === "busy") return;
-  const rect = canvas.getBoundingClientRect();
-  const x = Math.floor(((e.clientX - rect.left) / rect.width) * stage.width);
-  const y = Math.floor(((e.clientY - rect.top) / rect.height) * stage.height);
+  const cell = scene3d.pick(e);
+  if (!cell) return;
+  const { x, y } = cell;
   cursor = { x, y };
   const clicked = unitAt(x, y);
 
@@ -402,10 +405,23 @@ canvas.addEventListener("click", (e) => {
 });
 
 // 우클릭 = 전체 취소 (이동 전 위치로 복귀)
-canvas.addEventListener("contextmenu", (e) => {
+scene3d.domElement.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   if (phase !== "player" || mode === "busy" || !selected) return;
   cancelToOrigin();
+});
+
+// 명중률 미리보기: 책략 대상 위에 마우스를 올리면 정보 패널에 표시
+scene3d.domElement.addEventListener("mousemove", (e) => {
+  if (mode !== "spellSelect" || !selected || !pendingSpell) return;
+  const cell = scene3d.pick(e);
+  if (!cell) return;
+  const t = unitAt(cell.x, cell.y);
+  if (t && targetCells?.has(key(cell.x, cell.y)) && pendingSpell.kind === "damage") {
+    infoEl.innerHTML = `<b>${pendingSpell.name}</b> → ${t.name} ·
+      명중률 <b>${spellHitChance(selected, t)}%</b> ·
+      예상 위력 ≈ ${Math.max(1, Math.round(selected.int * pendingSpell.power - t.int * 0.5))}`;
+  }
 });
 
 endTurnBtn.addEventListener("click", () => {
@@ -446,7 +462,7 @@ async function enemyAct(e: Unit) {
     return !unitAt(cx, cy) || (cx === e.x && cy === e.y);
   };
 
-  // 1) 책략 우선 (책사): 이동 후 책략이 닿는 가장 약한 대상
+  // 1) 책략 우선 (도사): 이동 후 책략이 닿는 가장 약한 대상
   const spell = e.spells.map((id) => SPELLS[id]).find((s) => e.mp >= s.mp);
   if (spell && spell.kind === "damage") {
     let best: { cell: string; target: Unit } | null = null;
@@ -464,7 +480,7 @@ async function enemyAct(e: Unit) {
       const [cx, cy] = best.cell.split(",").map(Number);
       e.x = cx;
       e.y = cy;
-      await sleep(250);
+      await sleep(400);
       addFloat(e.x, e.y, spell.name + "!", "#c890ff");
       await sleep(350);
       const res = castSpell(e, spell, best.target);
@@ -482,7 +498,7 @@ async function enemyAct(e: Unit) {
   for (const cell of range.keys()) {
     if (!reachable(cell)) continue;
     const [cx, cy] = cell.split(",").map(Number);
-    for (const ac of attackCells(stage, cx, cy, e.range)) {
+    for (const ac of attackCells(stage, cx, cy, JOBS[e.job].range)) {
       const t = unitAt(ac.x, ac.y);
       if (t && t.side === "player") {
         if (!best || t.hp < best.target.hp) best = { cell, target: t };
@@ -493,7 +509,7 @@ async function enemyAct(e: Unit) {
     const [cx, cy] = best.cell.split(",").map(Number);
     e.x = cx;
     e.y = cy;
-    await sleep(250);
+    await sleep(400);
     const hits = attackExchange(stage, e, best.target);
     for (const h of hits) {
       if (h.counter) {
@@ -534,31 +550,21 @@ async function enemyAct(e: Unit) {
 // ── 메인 루프 ──────────────────────────────────────────────────
 
 function frame() {
-  for (let i = floats.length - 1; i >= 0; i--) {
-    floats[i].life--;
-    if (floats[i].life <= 0) floats.splice(i, 1);
-  }
   const highlights: Highlight[] = [];
   if (moveRange)
-    highlights.push({ cells: new Set(moveRange.keys()), color: "rgba(80,150,255,0.4)" });
-  if (targetCells) highlights.push({ cells: targetCells, color: targetColor });
-  renderer.draw(units, highlights, selected, cursor, floats);
+    highlights.push({
+      cells: new Set(moveRange.keys()),
+      color: 0x5096ff,
+      opacity: 0.45,
+    });
+  if (targetCells)
+    highlights.push({ cells: targetCells, ...targetStyle });
+  scene3d.setHighlights(highlights);
+  scene3d.setCursor(cursor);
+  scene3d.syncUnits(units, selected);
+  scene3d.render();
   requestAnimationFrame(frame);
 }
-
-// 명중률 미리보기: 책략 대상 위에 마우스를 올리면 정보 패널에 표시
-canvas.addEventListener("mousemove", (e) => {
-  if (mode !== "spellSelect" || !selected || !pendingSpell) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = Math.floor(((e.clientX - rect.left) / rect.width) * stage.width);
-  const y = Math.floor(((e.clientY - rect.top) / rect.height) * stage.height);
-  const t = unitAt(x, y);
-  if (t && targetCells?.has(key(x, y)) && pendingSpell.kind === "damage") {
-    infoEl.innerHTML = `<b>${pendingSpell.name}</b> → ${t.name} ·
-      명중률 <b>${spellHitChance(selected, t)}%</b> ·
-      예상 위력 ≈ ${Math.max(1, Math.round(selected.int * pendingSpell.power - t.int * 0.5))}`;
-  }
-});
 
 document.getElementById("stage-name")!.textContent = stage.name;
 banner(`${stage.name}\n1턴 아군 페이즈`, 1500);

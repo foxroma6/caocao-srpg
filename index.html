@@ -20,12 +20,12 @@
     }
     h1 { font-size: 18px; margin: 4px 0 12px; color: #d9c07a; }
     #wrap { position: relative; }
-    canvas {
+    #wrap canvas {
+      display: block;
       border: 2px solid #3a3f4d;
-      border-radius: 4px;
+      border-radius: 6px;
       max-width: 100%;
       height: auto;
-      image-rendering: pixelated;
       cursor: pointer;
     }
     #banner {
@@ -44,6 +44,7 @@
       transition: opacity 0.25s;
       white-space: pre-line;
       text-align: center;
+      z-index: 20;
     }
     #banner.show { opacity: 1; }
     #menu {
@@ -75,13 +76,29 @@
     #menu button span { color: #9aa3b5; font-size: 12px; }
     #menu button:hover:not(:disabled) { background: #3a4256; }
     #menu button:disabled { color: #5a6070; cursor: default; }
+    .float {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      font-weight: bold;
+      font-size: 20px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+      pointer-events: none;
+      z-index: 15;
+      animation: floatUp 1.25s ease-out forwards;
+      white-space: nowrap;
+    }
+    @keyframes floatUp {
+      from { opacity: 1; margin-top: 0; }
+      70% { opacity: 1; }
+      to { opacity: 0; margin-top: -44px; }
+    }
     #hud {
       display: flex;
       gap: 12px;
       align-items: center;
       margin-top: 10px;
       width: 100%;
-      max-width: 640px;
+      max-width: 800px;
     }
     #info {
       flex: 1;
@@ -112,7 +129,6 @@
 <body>
   <h1 id="stage-name">조조전풍 SRPG</h1>
   <div id="wrap">
-    <canvas id="game"></canvas>
     <div id="banner"></div>
     <div id="menu"></div>
   </div>

@@ -1,11 +1,5 @@
-import {
-  Stage,
-  Terrain,
-  TERRAIN_CODE,
-  Unit,
-  UnitClass,
-  moveCost,
-} from "./types";
+import { Stage, Terrain, TERRAIN_CODE, Unit, moveCost } from "./types";
+import { JOBS } from "../data/jobs";
 
 export interface Cell {
   x: number;
@@ -38,6 +32,7 @@ export function movementRange(
   units: Unit[],
   mover: Unit
 ): Map<string, number> {
+  const mounted = JOBS[mover.job].mounted;
   const cost = new Map<string, number>();
   const occupied = new Map<string, Unit>();
   for (const u of units) if (u.hp > 0) occupied.set(key(u.x, u.y), u);
@@ -56,7 +51,7 @@ export function movementRange(
       if (!inBounds(stage, nx, ny)) continue;
       const blocker = occupied.get(key(nx, ny));
       if (blocker && blocker.side !== mover.side) continue; // 적은 통과 불가
-      const step = moveCost(terrainAt(stage, nx, ny), mover.cls);
+      const step = moveCost(terrainAt(stage, nx, ny), mounted);
       const nc = c + step;
       if (nc > mover.mov) continue;
       if (nc < (cost.get(key(nx, ny)) ?? Infinity)) {

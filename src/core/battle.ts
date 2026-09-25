@@ -1,5 +1,6 @@
-import { Stage, Unit, affinity, terrainGuard } from "./types";
+import { Stage, Unit, terrainGuard } from "./types";
 import { manhattan, terrainAt } from "./grid";
+import { JOBS, affinity } from "../data/jobs";
 import { Spell } from "../data/spells";
 import { Item } from "../data/items";
 
@@ -14,7 +15,7 @@ export interface Hit {
 
 /** 물리 데미지 = (공격력 × 상성 × 지형계수) − 방어력, ±10% 난수, 최소 1 */
 export function calcDamage(stage: Stage, attacker: Unit, defender: Unit): number {
-  const aff = affinity(attacker.cls, defender.cls);
+  const aff = affinity(JOBS[attacker.job].category, JOBS[defender.job].category);
   const guard = terrainGuard(terrainAt(stage, defender.x, defender.y));
   const base = attacker.atk * aff * guard - defender.def;
   const variance = 0.9 + Math.random() * 0.2;
@@ -38,7 +39,8 @@ export function attackExchange(
 
   if (defender.hp > 0) {
     const d = manhattan(attacker, defender);
-    if (d >= defender.range[0] && d <= defender.range[1]) {
+    const [lo, hi] = JOBS[defender.job].range;
+    if (d >= lo && d <= hi) {
       const cdmg = Math.max(1, Math.round(calcDamage(stage, defender, attacker) * 0.75));
       attacker.hp = Math.max(0, attacker.hp - cdmg);
       hits.push({ target: attacker, damage: cdmg, killed: attacker.hp === 0, counter: true });
