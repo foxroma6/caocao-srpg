@@ -803,9 +803,13 @@ document.getElementById("stage-name")!.textContent = stage.name;
   });
 })();
 
-// 디버그: ?select=조조 정보 카드 / ?settings=설정 모달 미리보기
+// 디버그: ?select=조조 정보 카드 / ?settings=설정 모달 / ?zoom=배율
 if (location.search.includes("select")) showInfo(units[0]);
 if (location.search.includes("settings")) toggleSettings(true);
+{
+  const zm = new URLSearchParams(location.search).get("zoom");
+  if (zm) scene3d.setView(Number(zm), Number(new URLSearchParams(location.search).get("px") ?? 0), Number(new URLSearchParams(location.search).get("pz") ?? 0));
+}
 
 // 디버그: ?portraits 로 접속하면 전 유닛 초상화 확인
 if (location.search.includes("portraits")) {
