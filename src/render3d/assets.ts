@@ -40,6 +40,8 @@ const FILES: Record<string, FileSpec> = {
   "prop:rock_b": { url: "models/props/rock_single_B.gltf", targetH: 0.26, optional: true },
   "prop:rock_d": { url: "models/props/rock_single_D.gltf", targetH: 0.17, optional: true },
   "prop:tower": { url: "models/props/building_tower_A_yellow.gltf", targetH: 0.8, optional: true },
+  "prop:cloud_a": { url: "models/props/cloud_big.gltf", targetH: 0.5, optional: true },
+  "prop:cloud_b": { url: "models/props/cloud_small.gltf", targetH: 0.38, optional: true },
 };
 
 /** 유닛 sprite → GLTF 에셋 매핑 (보행 유닛만; 기마·전용 캐릭터는 절차 모델) */
@@ -84,8 +86,35 @@ export function heroAssetKey(unitId: string): string | null {
   return REGISTRY.has(key) ? key : null;
 }
 
+/** 애니메이션풍 툰 셰이딩용 3단계 그라데이션 맵 */
+const toonGradient = (() => {
+  const tex = new THREE.DataTexture(new Uint8Array([90, 170, 255]), 3, 1, THREE.RedFormat);
+  tex.needsUpdate = true;
+  return tex;
+})();
+
+/** 표준 머티리얼 → 툰 머티리얼 변환 (에셋별 캐시로 공유) */
+const toonCache = new WeakMap<THREE.Material, THREE.MeshToonMaterial>();
+
+function toToon(m: THREE.Material): THREE.Material {
+  if (!(m instanceof THREE.MeshStandardMaterial)) return m;
+  let toon = toonCache.get(m);
+  if (!toon) {
+    toon = new THREE.MeshToonMaterial({
+      color: m.color,
+      map: m.map,
+      gradientMap: toonGradient,
+      transparent: m.transparent,
+      opacity: m.opacity,
+      side: m.side,
+    });
+    toonCache.set(m, toon);
+  }
+  return toon;
+}
+
 /**
- * 정적 데코 프롭 인스턴스 (지오메트리·머티리얼 공유, 발밑 y=0 정렬).
+ * 정적 데코 프롭 인스턴스 (지오메트리·머티리얼 공유, 발밑 y=0 정렬, 툰 셰이딩).
  * 로드 전이거나 실패했으면 null → 호출측이 절차 데코로 폴백.
  */
 export function instantiateProp(key: string): THREE.Object3D | null {
@@ -97,6 +126,7 @@ export function instantiateProp(key: string): THREE.Object3D | null {
     if (o instanceof THREE.Mesh) {
       o.castShadow = true;
       o.receiveShadow = true;
+      o.material = Array.isArray(o.material) ? o.material.map(toToon) : toToon(o.material);
     }
   });
   const b = new THREE.Box3().setFromObject(obj);

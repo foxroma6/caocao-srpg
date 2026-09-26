@@ -34,7 +34,8 @@ function hash(x: number, y: number, n = 0): number {
   return v - Math.floor(v);
 }
 
-const GREENS = [0x8fae5e, 0x93b262, 0x89a758, 0x96b566];
+// 애니메이션풍 파스텔 팔레트
+const GREENS = [0x9ecb6b, 0xa6d273, 0x97c464, 0xaad67c];
 
 // ── 애니메이션 단위 ────────────────────────────────────────────
 
@@ -86,7 +87,19 @@ export class Scene3D {
   private tileMeshes: THREE.Mesh[] = [];
   private tileHeights: number[][] = [];
   private decorGroup = new THREE.Group(); // 나무·바위·성벽 등 (에셋 도착 시 재구성)
+  private cloudGroup = new THREE.Group(); // 떠다니는 구름
+  private clouds: { obj: THREE.Object3D; speed: number }[] = [];
   private waterMats: { mat: THREE.MeshBasicMaterial; phase: number }[] = [];
+  private toonGrad = (() => {
+    const tex = new THREE.DataTexture(new Uint8Array([90, 170, 255]), 3, 1, THREE.RedFormat);
+    tex.needsUpdate = true;
+    return tex;
+  })();
+
+  /** 애니메이션풍 툰 머티리얼 */
+  private toonMat(color: number): THREE.MeshToonMaterial {
+    return new THREE.MeshToonMaterial({ color, gradientMap: this.toonGrad });
+  }
   private highlightGroup = new THREE.Group();
   private highlightSig = "";
   private cursorMesh: THREE.LineLoop;
@@ -130,11 +143,25 @@ export class Scene3D {
     container.appendChild(this.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x252a24);
+    // 애니메이션풍 하늘 그라데이션 배경
+    {
+      const c = document.createElement("canvas");
+      c.width = 2;
+      c.height = 256;
+      const ctx = c.getContext("2d")!;
+      const g = ctx.createLinearGradient(0, 0, 0, 256);
+      g.addColorStop(0, "#8ecae6");
+      g.addColorStop(0.55, "#bfe3f2");
+      g.addColorStop(1, "#eaf6df");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 2, 256);
+      const tex = new THREE.CanvasTexture(c);
+      this.scene.background = tex;
+    }
 
-    // ── 조명 ──
-    this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x5a6b3a, 1.2));
-    const sun = new THREE.DirectionalLight(0xfff2d8, 2.2);
+    // ── 조명 (밝고 따뜻하게) ──
+    this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x7aa05a, 1.35));
+    const sun = new THREE.DirectionalLight(0xfff0d0, 2.2);
     sun.position.set(-6, 12, 4);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -150,6 +177,8 @@ export class Scene3D {
     this.buildTerrain();
     this.scene.add(this.decorGroup);
     this.buildDecor();
+    this.scene.add(this.cloudGroup);
+    this.spawnClouds();
     this.scene.add(this.highlightGroup);
 
     // ── 커서 ──
@@ -429,8 +458,7 @@ export class Scene3D {
 
   private buildTerrain() {
     const { stage } = this;
-    const std = (color: number) =>
-      new THREE.MeshStandardMaterial({ color, flatShading: true });
+    const std = (color: number) => this.toonMat(color);
 
     for (let y = 0; y < stage.height; y++) {
       this.tileHeights.push([]);
@@ -441,9 +469,9 @@ export class Scene3D {
 
         const boxH = hgt + 0.25;
         const color =
-          t === "mountain" ? 0x8d7b5f
-          : t === "fort" ? 0xa8a08c
-          : t === "water" ? 0x2c5580
+          t === "mountain" ? 0xa08a68
+          : t === "fort" ? 0xb8b09a
+          : t === "water" ? 0x4796c8
           : GREENS[Math.floor(hash(x, y) * GREENS.length)];
         const tile = new THREE.Mesh(new THREE.BoxGeometry(0.97, boxH, 0.97), std(color));
         tile.position.set(this.worldX(x), boxH / 2 - 0.25, this.worldZ(y));
@@ -452,12 +480,12 @@ export class Scene3D {
         this.scene.add(tile);
         this.tileMeshes.push(tile);
 
-        // 물: 일렁이는 수면 하이라이트
+        // 물: 일렁이는 수면 하이라이트 + 물가 포말
         if (t === "water") {
           const mat = new THREE.MeshBasicMaterial({
-            color: 0x6fa8dc,
+            color: 0xaadcf5,
             transparent: true,
-            opacity: 0.35,
+            opacity: 0.4,
             depthWrite: false,
           });
           const surf = new THREE.Mesh(new THREE.PlaneGeometry(0.97, 0.97), mat);
@@ -465,6 +493,33 @@ export class Scene3D {
           surf.position.set(this.worldX(x), hgt + 0.015, this.worldZ(y));
           this.scene.add(surf);
           this.waterMats.push({ mat, phase: hash(x, y, 99) * Math.PI * 2 });
+
+          // 육지와 맞닿은 가장자리에 흰 거품 라인
+          const foamMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.55,
+            depthWrite: false,
+          });
+          const dirs: [number, number, number, number][] = [
+            [0, -1, 0, -0.43], // 북쪽 이웃 → 타일 위쪽 가장자리
+            [0, 1, 0, 0.43],
+            [-1, 0, -0.43, 0],
+            [1, 0, 0.43, 0],
+          ];
+          for (const [dx, dy, ox, oz] of dirs) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= stage.width || ny >= stage.height) continue;
+            if (terrainAt(stage, nx, ny) === "water") continue;
+            const foam = new THREE.Mesh(
+              new THREE.PlaneGeometry(dx === 0 ? 0.97 : 0.1, dx === 0 ? 0.1 : 0.97),
+              foamMat
+            );
+            foam.rotation.x = -Math.PI / 2;
+            foam.position.set(this.worldX(x) + ox, hgt + 0.022, this.worldZ(y) + oz);
+            this.scene.add(foam);
+          }
         }
       }
     }
@@ -503,10 +558,33 @@ export class Scene3D {
   refreshDecor() {
     this.decorGroup.clear();
     this.buildDecor();
+    this.spawnClouds();
+  }
+
+  /** 하늘에 떠다니는 구름 (그림자가 지면을 지나간다) */
+  private spawnClouds() {
+    this.cloudGroup.clear();
+    this.clouds = [];
+    const w = this.stage.width;
+    const h = this.stage.height;
+    for (let i = 0; i < 6; i++) {
+      const cloud = instantiateProp(i % 2 ? "prop:cloud_a" : "prop:cloud_b");
+      if (!cloud) return; // 에셋 미로드 시 생략 (refreshDecor에서 재시도)
+      const g = new THREE.Group();
+      g.add(cloud);
+      g.scale.setScalar(1.4 + hash(i, 7) * 1.2);
+      g.position.set(
+        (hash(i, 1) - 0.5) * (w + 6),
+        3.2 + hash(i, 2) * 1.4,
+        (hash(i, 3) - 0.5) * (h + 4)
+      );
+      this.cloudGroup.add(g);
+      this.clouds.push({ obj: g, speed: 0.12 + hash(i, 5) * 0.15 });
+    }
   }
 
   private addTrees(x: number, y: number) {
-    const std = (c: number) => new THREE.MeshStandardMaterial({ color: c, flatShading: true });
+    const std = (c: number) => this.toonMat(c);
     const spots: [number, number][] = [
       [-0.28 + hash(x, y, 1) * 0.12, -0.26],
       [0.26, 0.2 + hash(x, y, 2) * 0.1],
@@ -542,7 +620,7 @@ export class Scene3D {
   }
 
   private addRocks(x: number, y: number, hgt: number) {
-    const std = (c: number) => new THREE.MeshStandardMaterial({ color: c, flatShading: true });
+    const std = (c: number) => this.toonMat(c);
     const keys = ["prop:rock_a", "prop:rock_b", "prop:rock_d"];
     const spots: [number, number, number][] = [
       [-0.3, -0.3, 0.16],
@@ -574,7 +652,7 @@ export class Scene3D {
   }
 
   private addFortWalls(x: number, y: number, hgt: number) {
-    const std = (c: number) => new THREE.MeshStandardMaterial({ color: c, flatShading: true });
+    const std = (c: number) => this.toonMat(c);
     const wx = this.worldX(x);
     const wz = this.worldZ(y);
     const wall = new THREE.Mesh(new THREE.BoxGeometry(0.97, 0.22, 0.12), std(0x8f8674));
@@ -902,7 +980,14 @@ export class Scene3D {
 
     // 수면 일렁임
     for (const w of this.waterMats) {
-      w.mat.opacity = 0.3 + 0.14 * Math.sin(this.time * 1.7 + w.phase);
+      w.mat.opacity = 0.34 + 0.16 * Math.sin(this.time * 1.7 + w.phase);
+    }
+
+    // 구름 드리프트 (오른쪽 끝에서 왼쪽으로 순환)
+    const wrapX = this.stage.width / 2 + 5;
+    for (const c of this.clouds) {
+      c.obj.position.x += c.speed * dt;
+      if (c.obj.position.x > wrapX) c.obj.position.x = -wrapX;
     }
 
     for (const u of units) {
