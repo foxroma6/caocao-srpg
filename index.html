@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>조조전풍 SRPG</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      background: #1a1c22;
+      color: #e8e6e0;
+      font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    h1 { font-size: 18px; margin: 4px 0 12px; color: #d9c07a; }
+    #wrap { position: relative; }
+    #wrap canvas {
+      display: block;
+      border: 2px solid #3a3f4d;
+      border-radius: 6px;
+      max-width: 100%;
+      height: auto;
+      cursor: pointer;
+    }
+    #banner {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: bold;
+      color: #ffe14d;
+      text-shadow: 0 2px 8px #000;
+      background: rgba(0, 0, 0, 0.45);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+      white-space: pre-line;
+      text-align: center;
+      z-index: 20;
+    }
+    #banner.show { opacity: 1; }
+    #menu {
+      position: absolute;
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      background: #262a35;
+      border: 1px solid #d9c07a;
+      border-radius: 6px;
+      padding: 4px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+      min-width: 120px;
+    }
+    #menu button {
+      background: transparent;
+      color: #e8e6e0;
+      border: none;
+      border-radius: 4px;
+      padding: 7px 12px;
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #menu button span { color: #9aa3b5; font-size: 12px; }
+    #menu button:hover:not(:disabled) { background: #3a4256; }
+    #menu button:disabled { color: #5a6070; cursor: default; }
+    .float {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      font-weight: bold;
+      font-size: 20px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+      pointer-events: none;
+      z-index: 15;
+      animation: floatUp 1.25s ease-out forwards;
+      white-space: nowrap;
+    }
+    @keyframes floatUp {
+      from { opacity: 1; margin-top: 0; }
+      70% { opacity: 1; }
+      to { opacity: 0; margin-top: -44px; }
+    }
+    #hud {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 10px;
+      width: 100%;
+      max-width: 880px;
+    }
+    #info {
+      flex: 1;
+      background: linear-gradient(160deg, #232836, #1b1f29);
+      border: 1px solid #3a3f4d;
+      border-top: 2px solid #d9c07a;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      min-height: 96px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    #info .placeholder { color: #9aa3b5; align-self: center; }
+    #info .pwrap { position: relative; flex-shrink: 0; }
+    #info .pwrap canvas {
+      width: 84px;
+      height: 84px;
+      display: block;
+      border-radius: 6px;
+    }
+    #info .fchip {
+      position: absolute;
+      left: 50%;
+      bottom: -8px;
+      transform: translateX(-50%);
+      background: var(--fc, #8a8f9a);
+      color: #fff;
+      font-size: 11px;
+      font-weight: bold;
+      padding: 1px 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 0, 0, 0.4);
+      white-space: nowrap;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    }
+    #info .ptext { flex: 1; min-width: 0; }
+    #info .hd { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    #info .uname { font-size: 17px; font-weight: bold; color: #f0ead8; }
+    #info .ujob {
+      color: #d9c07a;
+      font-size: 12px;
+      font-weight: bold;
+      border: 1px solid #6a5f42;
+      border-radius: 4px;
+      padding: 0 6px;
+    }
+    #info .usub { color: #8a93a5; font-size: 12px; }
+    #info .buffchip {
+      color: #1b1f29;
+      background: #ffd24d;
+      font-size: 11px;
+      font-weight: bold;
+      border-radius: 4px;
+      padding: 0 6px;
+    }
+    #info .bars { display: flex; gap: 14px; margin: 7px 0 6px; flex-wrap: wrap; }
+    #info .bar { display: flex; align-items: center; gap: 5px; }
+    #info .bar em {
+      font-style: normal;
+      color: #8a93a5;
+      font-size: 11px;
+      width: 24px;
+      text-align: right;
+    }
+    #info .track {
+      width: 90px;
+      height: 8px;
+      background: #10131a;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid #343a48;
+    }
+    #info .fill { height: 100%; border-radius: 4px; }
+    #info .fill.hp { background: linear-gradient(90deg, #35b552, #6fe08a); }
+    #info .fill.mp { background: linear-gradient(90deg, #2b6ad9, #6aaef8); }
+    #info .fill.rage { background: linear-gradient(90deg, #c8961e, #ffe14d); }
+    #info .fill.exp { background: linear-gradient(90deg, #7a4fd0, #b88af0); }
+    #info .ulv { color: #d9c07a; font-size: 13px; font-weight: bold; }
+    #info .bar span { color: #b8c0d0; font-size: 11px; }
+    #info .statrow { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+    #info .st {
+      background: #2a3040;
+      border-radius: 4px;
+      padding: 1px 8px;
+      font-size: 12px;
+      color: #dfe4ee;
+    }
+    #info .st em { font-style: normal; color: #8a93a5; margin-right: 4px; font-size: 11px; }
+    #info .skill { font-size: 12px; line-height: 1.45; }
+    #info .skill b.trait { color: #e8a84d; }
+    #info .skill b.ult { color: #ffd24d; }
+    #info .skill .d { color: #9aa3b5; }
+    #info .util { font-size: 11px; color: #8a93a5; margin-top: 3px; }
+    button {
+      background: #2b5fd9;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 10px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:hover { background: #3a6ee8; }
+    #hint { font-size: 11px; color: #6a7284; margin-top: 8px; }
+    /* ── 설정 모달 ── */
+    #settings[hidden] { display: none; }
+    #settings {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #settings .sheet {
+      background: linear-gradient(160deg, #252a38, #1a1e28);
+      border: 1px solid #3a3f4d;
+      border-top: 2px solid #d9c07a;
+      border-radius: 8px;
+      padding: 22px 28px;
+      width: min(480px, 90vw);
+      max-height: 84vh;
+      overflow-y: auto;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+    }
+    #settings h2 {
+      margin: 0 0 14px;
+      font-size: 18px;
+      color: #f0ead8;
+      border-bottom: 1px solid #3a3f4d;
+      padding-bottom: 10px;
+    }
+    #settings h3 {
+      margin: 16px 0 8px;
+      font-size: 13px;
+      color: #d9c07a;
+      letter-spacing: 1px;
+    }
+    #settings table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    #settings td { padding: 4px 0; color: #c8cfdd; }
+    #settings td:first-child { width: 130px; color: #f0ead8; font-weight: bold; }
+    #settings kbd {
+      background: #2f3546;
+      border: 1px solid #454c60;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    #settings .swatch {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      margin-right: 6px;
+      vertical-align: -1px;
+    }
+    #settings .credit { font-size: 11px; color: #8a93a5; line-height: 1.6; }
+    #settings .close-row { text-align: right; margin-top: 16px; }
+  </style>
+  <script type="module" crossorigin src="./assets/index-BkhhA26L.js"></script>
+</head>
+<body>
+  <h1 id="stage-name">조조전풍 SRPG</h1>
+  <div id="wrap">
+    <div id="banner"></div>
+    <div id="menu"></div>
+  </div>
+  <div id="hud">
+    <div id="info">유닛을 선택하세요</div>
+    <button id="end-turn">턴 종료</button>
+  </div>
+  <div id="hint">ESC — 설정 · 조작법</div>
+
+  <div id="settings" hidden>
+    <div class="sheet">
+      <h2>⚙ 설정</h2>
+      <h3>조작법</h3>
+      <table>
+        <tr><td><kbd>좌클릭</kbd></td><td>유닛 선택 → 이동 → 행동 메뉴 (공격 / 필살기 / 책략 / 아이템 / 대기)</td></tr>
+        <tr><td><kbd>좌클릭</kbd> 같은 유닛</td><td>이동 없이 제자리에서 행동</td></tr>
+        <tr><td><kbd>우클릭</kbd></td><td>취소 — 이동 전 위치로 복귀</td></tr>
+        <tr><td><kbd>ESC</kbd></td><td>선택 취소 / 설정 창 열기·닫기</td></tr>
+        <tr><td><kbd>턴 종료</kbd> 버튼</td><td>남은 아군 행동을 마치고 적군 페이즈로</td></tr>
+      </table>
+      <h3>범위 표시</h3>
+      <table>
+        <tr><td><span class="swatch" style="background:#5096ff"></span>파랑</td><td>이동 가능 범위</td></tr>
+        <tr><td><span class="swatch" style="background:#ff4646"></span>빨강</td><td>공격 대상</td></tr>
+        <tr><td><span class="swatch" style="background:#c850ff"></span>보라</td><td>책략 대상</td></tr>
+        <tr><td><span class="swatch" style="background:#50dc78"></span>초록</td><td>회복 대상</td></tr>
+        <tr><td><span class="swatch" style="background:#ffd24d"></span>금색</td><td>필살기 대상</td></tr>
+      </table>
+      <h3>세력 표시</h3>
+      <table>
+        <tr><td><span class="swatch" style="background:#3d6ad4"></span>위(魏)</td><td>조조군</td></tr>
+        <tr><td><span class="swatch" style="background:#3da45a"></span>촉(蜀)</td><td>유비군</td></tr>
+        <tr><td><span class="swatch" style="background:#c43131"></span>오(吳)</td><td>손씨군</td></tr>
+        <tr><td><span class="swatch" style="background:#d8b62a"></span>황건(黃)</td><td>황건적</td></tr>
+      </table>
+      <h3>정보</h3>
+      <p class="credit">
+        조조전풍 SRPG 프로토타입 · Three.js<br>
+        병사 모델: KayKit Adventurers (CC0) · 영웅 모델: Tripo AI 생성
+      </p>
+      <div class="close-row"><button id="settings-close">닫기 (ESC)</button></div>
+    </div>
+  </div>
+</body>
+</html>
