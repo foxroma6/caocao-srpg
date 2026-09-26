@@ -404,6 +404,7 @@ async function doUltimate(u: Unit, ult: Ultimate, target: Unit | null) {
   mode = "busy";
   targetCells = null;
   u.rage = 0;
+  await scene3d.focusOn(u.x, u.y, 2.2, 0.45); // 다이나믹 캠: 시전자 줌인
   await banner(`⚡ ${ult.name} ⚡`, 800);
 
   if (ult.kind === "buff") {
@@ -435,6 +436,7 @@ async function doUltimate(u: Unit, ult: Ultimate, target: Unit | null) {
   }
 
   await sleep(400);
+  await scene3d.releaseFocus();
   finishAction(u);
 }
 
@@ -443,6 +445,13 @@ async function doUltimate(u: Unit, ult: Ultimate, target: Unit | null) {
 async function doAttack(attacker: Unit, defender: Unit) {
   mode = "busy";
   targetCells = null;
+  // 다이나믹 캠: 교전 지점 줌인
+  await scene3d.focusOn(
+    (attacker.x + defender.x) / 2,
+    (attacker.y + defender.y) / 2,
+    1.7,
+    0.35
+  );
   await scene3d.attackAnim(attacker, defender);
   const hits = attackExchange(stage, attacker, defender, units);
   let first = true;
@@ -466,12 +475,14 @@ async function doAttack(attacker: Unit, defender: Unit) {
       addFloat(h.target.x, h.target.y, h.target.side === "enemy" ? "격파!" : "전사…", "#ff8080");
   }
   await sleep(400);
+  await scene3d.releaseFocus(0.45);
   finishAction(attacker);
 }
 
 async function doSpell(caster: Unit, spell: Spell, target: Unit) {
   mode = "busy";
   targetCells = null;
+  await scene3d.focusOn((caster.x + target.x) / 2, (caster.y + target.y) / 2, 1.7, 0.35);
   addFloat(caster.x, caster.y, spell.name + "!", "#c890ff");
   await scene3d.attackAnim(caster, target, 0.45);
   await sleep(200);
@@ -486,12 +497,14 @@ async function doSpell(caster: Unit, spell: Spell, target: Unit) {
     if (res.killed) addFloat(target.x, target.y, target.side === "enemy" ? "격파!" : "전사…", "#ff8080");
   }
   await sleep(300);
+  await scene3d.releaseFocus(0.45);
   finishAction(caster);
 }
 
 // ── 플레이어 입력 ──────────────────────────────────────────────
 
 scene3d.domElement.addEventListener("click", (e) => {
+  if (scene3d.consumeDrag()) return; // 드래그로 화면을 움직인 경우 선택 무시
   if (phase !== "player" || mode === "busy") return;
   const cell = scene3d.pick(e);
   if (!cell) return;
@@ -641,11 +654,16 @@ async function startEnemyPhase() {
 
   for (const e of alive("enemy")) {
     if (phase !== "enemy") return;
+    await scene3d.focusOn(e.x, e.y, 1.45, 0.4); // 다이나믹 캠: 행동하는 적 추적
     await enemyAct(e);
     processLevelUps(); // 반격으로 얻은 경험치
     await sleep(350);
-    if (checkGameOver()) return;
+    if (checkGameOver()) {
+      void scene3d.releaseFocus();
+      return;
+    }
   }
+  await scene3d.releaseFocus();
 
   turn++;
   for (const u of units) {

@@ -98,9 +98,24 @@ export class Scene3D {
   private basePos = new THREE.Vector3();
   private panOffset = new THREE.Vector3();
   private zoomLevel = 1;
-  private dragging = false;
+  private dragging = false; // 팬 드래그 중
+  private dragMoved = false;
+  private justDragged = false; // 직전 클릭이 드래그였는지 (선택 클릭 무시용)
   private lastPointer = { x: 0, y: 0 };
+  private dragStart = { x: 0, y: 0 };
   private keysDown = new Set<string>();
+
+  // ── 다이나믹 캠 (전투 연출) ──
+  private camAnim: {
+    t: number;
+    dur: number;
+    fromZoom: number;
+    toZoom: number;
+    fromPan: THREE.Vector3;
+    toPan: THREE.Vector3;
+    resolve: (() => void) | null;
+  } | null = null;
+  private savedView: { zoom: number; pan: THREE.Vector3 } | null = null;
 
   constructor(public container: HTMLElement, public stage: Stage) {
     const W = 880;
@@ -200,6 +215,74 @@ export class Scene3D {
     this.applyCamera();
   }
 
+  // ── 다이나믹 캠 ──────────────────────────────────────────────
+
+  private startCamAnim(toZoom: number, toPan: THREE.Vector3, dur: number): Promise<void> {
+    // 진행 중이던 트윈은 즉시 완료 처리
+    this.camAnim?.resolve?.();
+    return new Promise((resolve) => {
+      this.camAnim = {
+        t: 0,
+        dur,
+        fromZoom: this.zoomLevel,
+        toZoom,
+        fromPan: this.panOffset.clone(),
+        toPan,
+        resolve,
+      };
+    });
+  }
+
+  /** 타일 (x,y)를 화면 중앙에 두고 줌인. 첫 호출 시 사용자 시점을 저장 */
+  focusOn(x: number, y: number, zoom = 1.8, dur = 0.45): Promise<void> {
+    if (!this.savedView) {
+      this.savedView = { zoom: this.zoomLevel, pan: this.panOffset.clone() };
+    }
+    this.camera.updateMatrixWorld(true);
+    const center = this.groundPoint(new THREE.Vector2(0, 0));
+    const toPan = this.panOffset.clone();
+    if (center) {
+      toPan.x += this.worldX(x) - center.x;
+      toPan.z += this.worldZ(y) - center.z;
+    }
+    return this.startCamAnim(Math.max(0.85, Math.min(4, zoom)), toPan, dur);
+  }
+
+  /** 연출 종료: 사용자 시점으로 복귀 */
+  releaseFocus(dur = 0.55): Promise<void> {
+    if (!this.savedView) return Promise.resolve();
+    const { zoom, pan } = this.savedView;
+    this.savedView = null;
+    return this.startCamAnim(zoom, pan, dur);
+  }
+
+  private updateCamAnim(dt: number) {
+    const a = this.camAnim;
+    if (!a) return;
+    a.t = Math.min(a.dur, a.t + dt);
+    const k = a.t / a.dur;
+    const e = k * k * (3 - 2 * k); // smoothstep
+    this.zoomLevel = a.fromZoom + (a.toZoom - a.fromZoom) * e;
+    this.panOffset.lerpVectors(a.fromPan, a.toPan, e);
+    this.applyCamera();
+    if (a.t >= a.dur) {
+      this.camAnim = null;
+      a.resolve?.();
+    }
+  }
+
+  /** 연출 중에는 사용자 카메라 입력 잠금 */
+  private camLocked(): boolean {
+    return this.camAnim !== null || this.savedView !== null;
+  }
+
+  /** 직전 포인터 조작이 드래그였으면 true (클릭 선택 무시용) */
+  consumeDrag(): boolean {
+    const d = this.justDragged;
+    this.justDragged = false;
+    return d;
+  }
+
   private panByScreen(dx: number, dy: number) {
     const rect = this.domElement.getBoundingClientRect();
     const worldPerPx =
@@ -220,6 +303,7 @@ export class Scene3D {
       "wheel",
       (e: WheelEvent) => {
         e.preventDefault();
+        if (this.camLocked()) return;
         const rect = el.getBoundingClientRect();
         const ndc = new THREE.Vector2(
           ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -241,20 +325,35 @@ export class Scene3D {
       { passive: false }
     );
 
-    // 휠 버튼 드래그: 팬
+    // 좌클릭·휠 버튼 꾹 누르고 드래그: 팬
+    // (좌클릭은 4px 이상 움직였을 때만 드래그로 판정 — 짧은 클릭은 선택으로 동작)
     el.addEventListener("pointerdown", (e: PointerEvent) => {
-      if (e.button !== 1) return;
-      e.preventDefault();
+      if (e.button !== 0 && e.button !== 1) return;
+      if (e.button === 1) e.preventDefault();
+      if (this.camLocked()) return;
       this.dragging = true;
+      this.dragMoved = e.button === 1; // 휠 버튼은 즉시 드래그
+      this.dragStart = { x: e.clientX, y: e.clientY };
       this.lastPointer = { x: e.clientX, y: e.clientY };
       el.setPointerCapture(e.pointerId);
     });
     el.addEventListener("pointermove", (e: PointerEvent) => {
       if (!this.dragging) return;
+      if (!this.dragMoved) {
+        const dist =
+          Math.abs(e.clientX - this.dragStart.x) + Math.abs(e.clientY - this.dragStart.y);
+        if (dist < 5) return; // 아직 클릭 범위
+        this.dragMoved = true;
+        this.lastPointer = { x: e.clientX, y: e.clientY };
+      }
       this.panByScreen(e.clientX - this.lastPointer.x, e.clientY - this.lastPointer.y);
       this.lastPointer = { x: e.clientX, y: e.clientY };
     });
-    const endDrag = () => (this.dragging = false);
+    const endDrag = () => {
+      if (this.dragging && this.dragMoved) this.justDragged = true;
+      this.dragging = false;
+      this.dragMoved = false;
+    };
     el.addEventListener("pointerup", endDrag);
     el.addEventListener("pointercancel", endDrag);
     el.addEventListener("auxclick", (e) => e.preventDefault());
@@ -272,7 +371,7 @@ export class Scene3D {
   }
 
   private updateKeyPan(dt: number) {
-    if (this.keysDown.size === 0) return;
+    if (this.camLocked() || this.keysDown.size === 0) return;
     const speed = 550 * dt; // 화면 px/초
     let dx = 0;
     let dy = 0;
@@ -798,6 +897,7 @@ export class Scene3D {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     this.time += dt;
 
+    this.updateCamAnim(dt);
     this.updateKeyPan(dt);
 
     // 수면 일렁임
