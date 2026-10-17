@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { Unit } from "../core/types";
 import { JOBS, SpriteKind } from "../data/jobs";
+import { TOON_GRADIENT } from "./assets";
 
 const SKIN = 0xe8b98a;
 const YELLOW = 0xe8c832; // 황건(黃巾)
@@ -15,10 +16,10 @@ const WOOD = 0x7a5230;
 const EYE = 0x181410;
 const HAIR = 0x2a2018;
 
-function mat(color: number): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
+function mat(color: number): THREE.MeshToonMaterial {
+  return new THREE.MeshToonMaterial({
     color,
-    flatShading: true,
+    gradientMap: TOON_GRADIENT, // 애니메이션풍 셀 셰이딩
     transparent: true, // acted 표시용 opacity 토글
   });
 }
@@ -90,7 +91,7 @@ function addGuardHelmet(g: THREE.Group, hy: number) {
 /** 통천관풍 금관 (군주) */
 function addLordCrown(g: THREE.Group, hy: number) {
   const band = mesh(new THREE.CylinderGeometry(0.075, 0.065, 0.06, 6, 1, true), GOLD);
-  (band.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+  (band.material as THREE.Material).side = THREE.DoubleSide;
   band.position.y = hy + 0.08;
   g.add(band);
   // 관 위 세움 장식
@@ -237,7 +238,7 @@ function addShoulderPads(g: THREE.Group, y: number, color: number, r = 0.055) {
 /** 갑주 치마 (허리 아래 판갑) */
 function addTassets(g: THREE.Group, y: number, color: number) {
   const skirt = mesh(new THREE.CylinderGeometry(0.11, 0.16, 0.12, 6, 1, true), color);
-  (skirt.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+  (skirt.material as THREE.Material).side = THREE.DoubleSide;
   skirt.position.y = y;
   g.add(skirt);
 }
@@ -548,10 +549,10 @@ export function buildProcEscort(u: Unit): THREE.Group {
 }
 
 /** 수집: 그룹 내 표준 머티리얼 (opacity 제어용) */
-export function collectMaterials(root: THREE.Object3D): THREE.MeshStandardMaterial[] {
-  const out: THREE.MeshStandardMaterial[] = [];
+export function collectMaterials(root: THREE.Object3D): THREE.Material[] {
+  const out: THREE.Material[] = [];
   root.traverse((o) => {
-    if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
+    if (o instanceof THREE.Mesh && o.material instanceof THREE.Material) {
       out.push(o.material);
     }
   });

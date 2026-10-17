@@ -19,6 +19,7 @@ import {
   instantiate,
   instantiateProp,
 } from "./assets";
+import { addOutlines } from "./outline";
 import { RAGE_MAX, ULTIMATES } from "../data/ultimates";
 import { factionOf } from "../data/factions";
 
@@ -45,7 +46,7 @@ interface Actor {
   obj: THREE.Object3D; // squad의 자식 (배치 좌표를 가짐)
   inner: THREE.Object3D; // 흔들림/사망 회전을 적용하는 내부 노드
   gltf?: GltfInstance;
-  materials: THREE.MeshStandardMaterial[];
+  materials: THREE.Material[];
   phase: number; // 개체별 위상 (봅 애니 어긋나게)
   loco: Loco;
   dyingT: number; // 0=생존, >0 사망 연출 경과
@@ -89,6 +90,7 @@ export class Scene3D {
   private decorGroup = new THREE.Group(); // 나무·바위·성벽 등 (에셋 도착 시 재구성)
   private cloudGroup = new THREE.Group(); // 떠다니는 구름
   private clouds: { obj: THREE.Object3D; speed: number }[] = [];
+  private treeSways: { obj: THREE.Object3D; phase: number }[] = []; // 바람에 흔들리는 나무
   private waterMats: { mat: THREE.MeshBasicMaterial; phase: number }[] = [];
   private toonGrad = (() => {
     const tex = new THREE.DataTexture(new Uint8Array([90, 170, 255]), 3, 1, THREE.RedFormat);
@@ -557,6 +559,7 @@ export class Scene3D {
   /** 에셋이 늦게 로드됐을 때 데코를 프롭 버전으로 재구성 */
   refreshDecor() {
     this.decorGroup.clear();
+    this.treeSways = [];
     this.buildDecor();
     this.spawnClouds();
   }
@@ -616,6 +619,7 @@ export class Scene3D {
       g.position.set(this.worldX(x) + ox, 0, this.worldZ(y) + oz);
       g.rotation.y = hash(x, y, 7 + i) * Math.PI * 2;
       this.decorGroup.add(g);
+      this.treeSways.push({ obj: g, phase: hash(x, y, 11 + i) * Math.PI * 2 });
     }
   }
 
@@ -775,11 +779,12 @@ export class Scene3D {
     const inner = new THREE.Group();
     while (obj.children.length) inner.add(obj.children[0]);
     obj.add(inner);
+    addOutlines(obj); // 만화풍 외곽선 (수집 전에 붙여 페이드에 포함)
     return {
       obj,
       inner,
       gltf,
-      materials: gltf ? gltf.materials : collectMaterials(obj),
+      materials: collectMaterials(obj),
       phase: Math.random() * Math.PI * 2,
       loco: "idle",
       dyingT: 0,
@@ -988,6 +993,12 @@ export class Scene3D {
     for (const c of this.clouds) {
       c.obj.position.x += c.speed * dt;
       if (c.obj.position.x > wrapX) c.obj.position.x = -wrapX;
+    }
+
+    // 바람에 흔들리는 나무
+    for (const s of this.treeSways) {
+      s.obj.rotation.z = Math.sin(this.time * 1.4 + s.phase) * 0.045;
+      s.obj.rotation.x = Math.sin(this.time * 1.05 + s.phase * 1.7) * 0.03;
     }
 
     for (const u of units) {

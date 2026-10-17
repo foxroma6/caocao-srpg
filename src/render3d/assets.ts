@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { addOutlines } from "./outline";
 
 interface Asset {
   scene: THREE.Group;
@@ -87,11 +88,12 @@ export function heroAssetKey(unitId: string): string | null {
 }
 
 /** 애니메이션풍 툰 셰이딩용 3단계 그라데이션 맵 */
-const toonGradient = (() => {
+export const TOON_GRADIENT = (() => {
   const tex = new THREE.DataTexture(new Uint8Array([90, 170, 255]), 3, 1, THREE.RedFormat);
   tex.needsUpdate = true;
   return tex;
 })();
+const toonGradient = TOON_GRADIENT;
 
 /** 표준 머티리얼 → 툰 머티리얼 변환 (에셋별 캐시로 공유) */
 const toonCache = new WeakMap<THREE.Material, THREE.MeshToonMaterial>();
@@ -131,6 +133,7 @@ export function instantiateProp(key: string): THREE.Object3D | null {
   });
   const b = new THREE.Box3().setFromObject(obj);
   obj.position.y = -b.min.y;
+  addOutlines(obj, 0.014); // 만화풍 외곽선
   return obj;
 }
 
@@ -140,7 +143,7 @@ export interface GltfInstance {
   root: THREE.Group; // 방향 보정 래퍼 (게임 기준 +X를 바라봄)
   mixer: THREE.AnimationMixer;
   actions: Partial<Record<ClipRole, THREE.AnimationAction>>;
-  materials: THREE.MeshStandardMaterial[];
+  materials: THREE.Material[];
 }
 
 export function instantiate(key: string): GltfInstance | null {
@@ -154,15 +157,25 @@ export function instantiate(key: string): GltfInstance | null {
   const bounds = new THREE.Box3().setFromObject(model);
   model.position.y -= bounds.min.y;
 
-  const materials: THREE.MeshStandardMaterial[] = [];
+  const materials: THREE.Material[] = [];
   model.traverse((o) => {
     if (o instanceof THREE.Mesh) {
       o.castShadow = true;
-      // 인스턴스별 opacity 제어를 위해 머티리얼 복제
-      const clone = (m: THREE.Material) => {
-        const c = m.clone();
+      // 인스턴스별 opacity 제어 + 애니메이션풍 툰 변환
+      const clone = (m: THREE.Material): THREE.Material => {
+        let c: THREE.Material;
+        if (m instanceof THREE.MeshStandardMaterial) {
+          c = new THREE.MeshToonMaterial({
+            color: m.color.clone(),
+            map: m.map,
+            gradientMap: toonGradient,
+            side: m.side,
+          });
+        } else {
+          c = m.clone();
+        }
         c.transparent = true;
-        if (c instanceof THREE.MeshStandardMaterial) materials.push(c);
+        materials.push(c);
         return c;
       };
       o.material = Array.isArray(o.material)
