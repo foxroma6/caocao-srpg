@@ -257,16 +257,52 @@ function addFloat(x: number, y: number, text: string, color: string) {
 
 interface MenuEntry {
   label: string;
+  icon?: string; // public/icons/<icon>.png|.svg — 없으면 emoji로 폴백
+  emoji?: string;
   sub?: string;
   disabled?: boolean;
   onClick: () => void;
+}
+
+/** 커스텀 아이콘 로드 (png → svg → 이모지 폴백) */
+function makeIcon(icon: string | undefined, emoji: string | undefined): HTMLElement {
+  const slot = document.createElement("span");
+  slot.className = "mi";
+  const fallback = () => (slot.textContent = emoji ?? "");
+  if (!icon) {
+    fallback();
+    return slot;
+  }
+  const base = import.meta.env.BASE_URL;
+  const img = document.createElement("img");
+  img.src = `${base}icons/${icon}.png`;
+  img.alt = "";
+  img.onerror = () => {
+    img.onerror = () => {
+      img.remove();
+      fallback();
+    };
+    img.src = `${base}icons/${icon}.svg`;
+  };
+  slot.appendChild(img);
+  return slot;
 }
 
 function showMenu(u: Unit, entries: MenuEntry[]) {
   menuEl.innerHTML = "";
   for (const e of entries) {
     const btn = document.createElement("button");
-    btn.innerHTML = e.sub ? `${e.label} <span>${e.sub}</span>` : e.label;
+    btn.appendChild(makeIcon(e.icon, e.emoji));
+    const label = document.createElement("span");
+    label.className = "ml";
+    label.textContent = e.label;
+    btn.appendChild(label);
+    if (e.sub) {
+      const sub = document.createElement("span");
+      sub.className = "ms";
+      sub.textContent = e.sub;
+      btn.appendChild(sub);
+    }
     btn.disabled = !!e.disabled;
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -461,7 +497,9 @@ function openActionMenu(u: Unit) {
 
   const entries: MenuEntry[] = [
     {
-      label: "⚔ 공격",
+      label: "공격",
+      icon: "attack",
+      emoji: "⚔",
       disabled: !canAttack,
       onClick: () => {
         targetCells = enemiesInWeaponRange(u);
@@ -473,7 +511,9 @@ function openActionMenu(u: Unit) {
     ...(ult
       ? [
           {
-            label: `⚡ ${ult.name.split("(")[0]}`,
+            label: ult.name.split("(")[0],
+            icon: "ultimate",
+            emoji: "⚡",
             sub: `기 ${u.rage}/${RAGE_MAX}`,
             disabled: !ultReady,
             onClick: () => {
@@ -492,17 +532,23 @@ function openActionMenu(u: Unit) {
         ]
       : []),
     {
-      label: "📜 책략",
+      label: "책략",
+      icon: "strategy",
+      emoji: "📜",
       disabled: usableSpells.length === 0,
       onClick: () => openSpellMenu(u),
     },
     {
-      label: "🎒 아이템",
+      label: "아이템",
+      icon: "item",
+      emoji: "🎒",
       disabled: u.items.length === 0,
       onClick: () => openItemMenu(u),
     },
     {
-      label: "🚩 대기",
+      label: "대기",
+      icon: "wait",
+      emoji: "🚩",
       onClick: () => finishAction(u),
     },
   ];
@@ -515,6 +561,8 @@ function openSpellMenu(u: Unit) {
     const usable = u.mp >= s.mp && spellTargets(u, s).size > 0;
     return {
       label: s.name,
+      icon: `spell_${s.id}`,
+      emoji: s.kind === "heal" ? "✚" : "📜",
       sub: `MP${s.mp}`,
       disabled: !usable,
       onClick: () => {
@@ -529,7 +577,7 @@ function openSpellMenu(u: Unit) {
       },
     };
   });
-  entries.push({ label: "← 돌아가기", onClick: () => openActionMenu(u) });
+  entries.push({ label: "돌아가기", icon: "back", emoji: "←", onClick: () => openActionMenu(u) });
   showMenu(u, entries);
 }
 
@@ -538,6 +586,8 @@ function openItemMenu(u: Unit) {
     const it = ITEMS[id];
     return {
       label: it.name,
+      icon: `item_${it.id}`,
+      emoji: "🧪",
       sub: it.heal ? `HP+${it.heal}` : `MP+${it.mp}`,
       onClick: () => {
         const res = useItem(u, it);
@@ -548,7 +598,7 @@ function openItemMenu(u: Unit) {
       },
     };
   });
-  entries.push({ label: "← 돌아가기", onClick: () => openActionMenu(u) });
+  entries.push({ label: "돌아가기", icon: "back", emoji: "←", onClick: () => openActionMenu(u) });
   showMenu(u, entries);
 }
 
