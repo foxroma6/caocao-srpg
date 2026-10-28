@@ -18,12 +18,14 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const API = "https://api.tripo3d.ai/v2/openapi";
 
-// ── 프리셋: 애니메이션풍 치비(SD) 삼국지 영웅 프롬프트 ──────────
-// 랑그릿사류 SRPG 유닛 느낌: 귀여운 비율 + 특징만 깔끔하게
+// ── 프리셋: 만화(웹툰)풍 치비 삼국지 영웅 프롬프트 ──────────────
+// 핵심: 플랫한 셀 색감 + 텍스처에 그려진 만화식 먹선(디테일 라인).
+// 외곽 실루엣 테두리는 게임 엔진이 런타임에 자동으로 씌운다.
 const STYLE =
-  "chibi anime style 3D game character, cute super-deformed proportions with large head, " +
-  "clean cel-shaded hand-painted texture, vibrant colors, anime tactical RPG unit, " +
-  "smooth simple shapes, single character, full body, standing on flat ground";
+  "2D cartoon style 3D game character, chibi proportions with large head, " +
+  "cel shaded with completely flat colors, bold clean black ink outlines drawn on the texture, " +
+  "comic book linework on clothes and face, manga webtoon look, no realistic shading, " +
+  "no gradients, vivid saturated colors, single character, full body, standing on flat ground";
 
 const HEROES = {
   caocao: {
