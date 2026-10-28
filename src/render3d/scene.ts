@@ -61,7 +61,7 @@ interface UnitView {
   escorts: Actor[];
   status: "alive" | "dying" | "dead";
   deathT: number;
-  baseYaw: number;
+  restYaw: number; // 정지 시 바라보는 방향 (마지막 이동/공격 방향의 4방향 양자화)
   yaw: number;
   forcedYaw: number | null;
   forcedUntil: number;
@@ -76,6 +76,12 @@ const shortestAngle = (from: number, to: number) => {
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   return d;
+};
+
+/** 이동/공격 방향을 동·서·남·북 4방향 yaw로 양자화 */
+const cardinalYaw = (dx: number, dz: number): number => {
+  if (Math.abs(dx) >= Math.abs(dz)) return dx >= 0 ? 0 : Math.PI;
+  return dz > 0 ? -Math.PI / 2 : Math.PI / 2;
 };
 
 export class Scene3D {
@@ -837,17 +843,23 @@ export class Scene3D {
     const mounted = JOBS[u.job].mounted;
     const squad = new THREE.Group();
 
+    // 영웅(아군 전원·이름 있는 장수)은 단독, 일반 병사만 부대(3인) 편성
+    const solo =
+      u.side === "player" || NAMED_IDS.has(u.id) || heroAssetKey(u.id) !== null;
+
     const leader = this.buildMember(u, "leader");
-    leader.obj.position.x = 0.08;
+    leader.obj.position.x = solo ? 0 : 0.08;
     squad.add(leader.obj);
 
     const escorts: Actor[] = [];
-    for (const dz of [-0.25, 0.25]) {
-      const e = this.buildMember(u, "escort");
-      e.obj.scale.setScalar(mounted ? 0.62 : 0.7);
-      e.obj.position.set(mounted ? -0.26 : -0.24, 0, dz);
-      squad.add(e.obj);
-      escorts.push(e);
+    if (!solo) {
+      for (const dz of [-0.25, 0.25]) {
+        const e = this.buildMember(u, "escort");
+        e.obj.scale.setScalar(mounted ? 0.62 : 0.7);
+        e.obj.position.set(mounted ? -0.26 : -0.24, 0, dz);
+        squad.add(e.obj);
+        escorts.push(e);
+      }
     }
 
     const baseYaw = u.side === "enemy" ? Math.PI : 0;
@@ -855,7 +867,8 @@ export class Scene3D {
 
     const root = new THREE.Group();
     root.add(squad);
-    root.scale.setScalar(mounted ? 1.02 : 1.12);
+    // 단독 영웅은 존재감을 위해 조금 크게
+    root.scale.setScalar(solo ? (mounted ? 1.12 : 1.24) : mounted ? 1.02 : 1.12);
     root.position.set(this.worldX(u.x), this.tileTop(u.x, u.y), this.worldZ(u.y));
     root.userData.getTile = () => ({ x: u.x, y: u.y });
 
@@ -913,7 +926,7 @@ export class Scene3D {
       escorts,
       status: "alive",
       deathT: 0,
-      baseYaw,
+      restYaw: baseYaw,
       yaw: baseYaw,
       forcedYaw: null,
       forcedUntil: 0,
@@ -981,6 +994,7 @@ export class Scene3D {
     const dz = this.worldZ(target.y) - view.root.position.z;
     view.forcedYaw = Math.atan2(-dz, dx);
     view.forcedUntil = this.time + 0.8;
+    view.restYaw = cardinalYaw(dx, dz); // 공격 후에도 그 방향을 계속 바라봄
     for (const a of view.actors) if (!a.isEscort || Math.random() < 0.7) this.playOnce(a, "attack");
     return new Promise((resolve) => {
       view.lunge = { t: 0, dur: 0.34, dist: 0.24 * power, resolve };
@@ -1066,14 +1080,17 @@ export class Scene3D {
       const prev = view.root.position.clone();
       view.root.position.lerp(target, Math.min(1, dt * 7));
 
-      // ── 방향 ──
-      let desired = view.baseYaw;
+      // ── 방향: 마지막 이동/공격 방향(4방향)을 유지 ──
+      let desired = view.restYaw;
       if (view.forcedYaw !== null && this.time < view.forcedUntil) {
         desired = view.forcedYaw;
       } else if (walking) {
         const vx = view.root.position.x - prev.x;
         const vz = view.root.position.z - prev.z;
-        if (Math.abs(vx) + Math.abs(vz) > 1e-4) desired = Math.atan2(-vz, vx);
+        if (Math.abs(vx) + Math.abs(vz) > 1e-4) {
+          desired = Math.atan2(-vz, vx); // 이동 중엔 부드럽게 실제 방향
+          view.restYaw = cardinalYaw(vx, vz); // 멈추면 이 4방향으로 정착
+        }
       }
       view.yaw += shortestAngle(view.yaw, desired) * Math.min(1, dt * 10);
       view.squad.rotation.y = view.yaw;
