@@ -34,7 +34,7 @@ const FILES: Record<string, FileSpec> = {
   "hero:xiahoudun": { url: "models/hero_xiahoudun.glb", targetH: 0.68, optional: true },
   "hero:xiahouyuan": { url: "models/hero_xiahouyuan.glb", targetH: 0.95, optional: true },
   "hero:yb5": { url: "models/hero_taoist.glb", targetH: 0.68, optional: true },
-  "hero:zhaoyun": { url: "models/hero_zhaoyun.glb", targetH: 0.95, optional: true },
+  "hero:zhaoyun": { url: "models/hero_zhaoyun.glb", targetH: 0.95, faceFix: Math.PI / 4, optional: true },
   "hero:huangzhong": { url: "models/hero_huangzhong.glb", targetH: 0.95, optional: true },
   // ── 지형 데코 (KayKit Medieval Hexagon, CC0) ──
   "prop:tree_a": { url: "models/props/tree_single_A.gltf", targetH: 0.62, optional: true },
