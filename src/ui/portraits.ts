@@ -36,6 +36,20 @@ const HAIR = "#241c12";
 // ── 캐릭터/직업별 스펙 ─────────────────────────────────────────
 
 const SPECS: Record<string, PortraitSpec> = {
+  // 조운: 상산의 용장 — 백은 갑주 + 푸른 기조, 결의에 찬 눈
+  zhaoyun: {
+    bgA: "#223052", bgB: "#0c1220",
+    armor: "#dfe4ee", armorDark: "#3d6ad4", trim: "#3d6ad4",
+    brow: "sharp", eyes: "open", beard: "none", beardColor: HAIR,
+    hat: "helmet", mouth: "neutral",
+  },
+  // 황충: 백발백염의 노장 신궁
+  huangzhong: {
+    bgA: "#303a2a", bgB: "#101408",
+    armor: "#3d6ad4", armorDark: "#2a4ba0", trim: "#cfd2d8",
+    brow: "fierce", eyes: "narrow", beard: "long", beardColor: "#e8e6e0",
+    hat: "helmet", mouth: "grim",
+  },
   // 조조: 난세의 간웅 — 날카로운 눈매, 옅은 미소, 금장 남색 갑주
   caocao: {
     bgA: "#2a2440", bgB: "#0f0c1a",

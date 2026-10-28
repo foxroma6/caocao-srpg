@@ -40,6 +40,12 @@ export const JOBS: Record<string, Job> = {
     growth: { hp: 4.5, mp: 2, atk: 1.5, def: 1, int: 1.6 },
     desc: "군을 이끄는 총대장. 상성 중립. 쓰러지면 패배한다.",
   },
+  lancer: {
+    id: "lancer", name: "창기병", category: "cavalry", mounted: true,
+    range: [1, 1], sprite: "horsearcher",
+    growth: { hp: 5, mp: 1.2, atk: 1.7, def: 1.2, int: 1 },
+    desc: "창을 든 돌격 기병. 기동력과 공격력을 겸비한다.",
+  },
   guard: {
     id: "guard", name: "친위대", category: "infantry", mounted: false,
     range: [1, 1], sprite: "guard",

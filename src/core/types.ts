@@ -32,7 +32,8 @@ export interface Unit extends UnitData {
   rage: number; // 기력 (0~100): 필살기 게이지
   level: number;
   exp: number; // 0~99, 100 도달 시 레벨업
-  buff?: { pct: number; turns: number }; // 공격력 버프 (패왕령 등)
+  buff?: { pct: number; turns: number }; // 공격력 버프 (팔문금쇄 등)
+  escaped?: boolean; // 퇴각전: 출구로 탈출 완료
 }
 
 export interface Stage {

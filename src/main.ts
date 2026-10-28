@@ -1,3 +1,5 @@
+// ── 조운전(趙雲傳) — 캠페인 메인 루프 ───────────────────────────
+
 import {
   attackExchange,
   castSpell,
@@ -12,66 +14,116 @@ import {
   movementRange,
   terrainAt,
 } from "./core/grid";
-import { Stage, TERRAIN_LABEL, Unit } from "./core/types";
+import { TERRAIN_LABEL, Unit, UnitData } from "./core/types";
 import { CATEGORY_LABEL, JOBS } from "./data/jobs";
-import { stage01 } from "./data/stage01";
 import { SPELLS, Spell } from "./data/spells";
 import { ITEMS } from "./data/items";
 import { TRAITS } from "./data/traits";
+import { RAGE_MAX, ULTIMATES, Ultimate } from "./data/ultimates";
 import { factionOf } from "./data/factions";
 import { EXP_MAX, applyLevelUp } from "./core/growth";
-import { RAGE_MAX, ULTIMATES, Ultimate } from "./data/ultimates";
-import { getPortrait } from "./ui/portraits";
+import { CAMPAIGN, CampaignStage, HEROES } from "./data/campaign";
 import { Highlight, Scene3D } from "./render3d/scene";
 import { loadAssets } from "./render3d/assets";
+import { getPortrait } from "./ui/portraits";
 
-// ── 게임 상태 ──────────────────────────────────────────────────
+// ── 캠페인 상태 (스테이지를 넘어 유지) ─────────────────────────
+
+interface HeroSave {
+  level: number;
+  exp: number;
+  maxHp: number;
+  maxMp: number;
+  atk: number;
+  def: number;
+  int: number;
+  items: string[];
+}
+
+const heroState = new Map<string, HeroSave>();
+
+function saveHero(u: Unit) {
+  heroState.set(u.id, {
+    level: u.level,
+    exp: u.exp,
+    maxHp: u.maxHp,
+    maxMp: u.maxMp,
+    atk: u.atk,
+    def: u.def,
+    int: u.int,
+    items: [...u.items],
+  });
+}
+
+function makeHeroUnit(id: string, x: number, y: number): Unit {
+  const base = HEROES[id];
+  const saved = heroState.get(id);
+  const data: UnitData = { ...base, x, y };
+  const u: Unit = {
+    ...data,
+    spells: [...base.spells],
+    items: saved ? [...saved.items] : [...base.items],
+    hp: 0,
+    mp: 0,
+    acted: false,
+    rage: 0,
+    level: saved?.level ?? base.level ?? 1,
+    exp: saved?.exp ?? 0,
+  };
+  if (saved) {
+    u.maxHp = saved.maxHp;
+    u.maxMp = saved.maxMp;
+    u.atk = saved.atk;
+    u.def = saved.def;
+    u.int = saved.int;
+  }
+  u.hp = u.maxHp;
+  u.mp = u.maxMp;
+  return u;
+}
+
+// ── 스테이지 상태 ──────────────────────────────────────────────
 
 type Phase = "player" | "enemy" | "over";
 type Mode =
   | "idle"
-  | "moveSelect" // 이동 목적지 선택
-  | "menu" // 행동 메뉴 (공격/책략/아이템/대기)
-  | "attackSelect" // 공격 대상 선택
-  | "spellSelect" // 책략 대상 선택
-  | "ultSelect" // 필살기 대상 선택
-  | "busy"; // 연출 중 입력 잠금
+  | "moveSelect"
+  | "menu"
+  | "attackSelect"
+  | "spellSelect"
+  | "ultSelect"
+  | "busy";
 
-const stage: Stage = stage01;
-const units: Unit[] = stage.units.map((u) => ({
-  ...u,
-  spells: [...u.spells],
-  items: [...u.items],
-  hp: u.maxHp,
-  mp: u.maxMp,
-  acted: false,
-  rage: 0,
-  level: u.level ?? 1,
-  exp: 0,
-}));
+let stageIndex = 0;
+let stage: CampaignStage = CAMPAIGN[0];
+let units: Unit[] = [];
+let scene3d!: Scene3D; // loadStage()에서 반드시 초기화됨
+let entrySnapshot: Map<string, HeroSave> = new Map(); // 재도전용
+
+let phase: Phase = "player";
+let mode: Mode = "idle";
+let turn = 1;
+let stageResult: "win" | "lose" | "clear" | null = null;
+let selected: Unit | null = null;
+let moveRange: Map<string, number> | null = null;
+let targetCells: Set<string> | null = null;
+let targetStyle = { color: 0xff4646, opacity: 0.5 };
+let pendingSpell: Spell | null = null;
+let pendingUlt: Ultimate | null = null;
+let origin: { x: number; y: number } | null = null;
+let cursor: { x: number; y: number } | null = null;
 
 const wrap = document.getElementById("wrap")!;
-const scene3d = new Scene3D(wrap, stage);
 const infoEl = document.getElementById("info")!;
 const bannerEl = document.getElementById("banner")!;
 const menuEl = document.getElementById("menu")!;
 const endTurnBtn = document.getElementById("end-turn") as HTMLButtonElement;
 
-let phase: Phase = "player";
-let mode: Mode = "idle";
-let turn = 1;
-let selected: Unit | null = null;
-let moveRange: Map<string, number> | null = null;
-let targetCells: Set<string> | null = null; // 공격/책략 대상 칸
-let targetStyle = { color: 0xff4646, opacity: 0.5 };
-let pendingSpell: Spell | null = null;
-let pendingUlt: Ultimate | null = null;
-let origin: { x: number; y: number } | null = null; // 이동 전 위치 (취소용)
-let cursor: { x: number; y: number } | null = null;
-
-const alive = (side: string) => units.filter((u) => u.side === side && u.hp > 0);
+const alive = (side: string) =>
+  units.filter((u) => u.side === side && u.hp > 0 && !u.escaped);
 const unitAt = (x: number, y: number) =>
-  units.find((u) => u.hp > 0 && u.x === x && u.y === y);
+  units.find((u) => u.hp > 0 && !u.escaped && u.x === x && u.y === y);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ── UI 헬퍼 ────────────────────────────────────────────────────
 
@@ -84,6 +136,11 @@ function banner(text: string, ms = 1200): Promise<void> {
       r();
     }, ms)
   );
+}
+
+function bannerHold(text: string) {
+  bannerEl.textContent = text;
+  bannerEl.classList.add("show");
 }
 
 /** 게이지 바 HTML */
@@ -99,13 +156,13 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
     infoEl.innerHTML = `<div class="placeholder">${
       x !== undefined && y !== undefined
         ? `지형 — <b>${TERRAIN_LABEL[terrainAt(stage, x, y)]}</b>`
-        : "유닛을 선택하세요"
+        : `🎯 ${stage.goalText}`
     }</div>`;
     return;
   }
   const job = JOBS[u.job];
   const fac = factionOf(u.faction);
-  const ult = ULTIMATES[u.id];
+  const ult = u.side === "player" ? ULTIMATES[u.id] : undefined;
   const spellNames = u.spells.map((s) => SPELLS[s].name).join(" · ") || "없음";
   const itemNames = u.items.map((i) => ITEMS[i].name).join(" · ") || "없음";
   const rangeStr = job.range[0] === job.range[1] ? `${job.range[0]}` : job.range.join("~");
@@ -217,23 +274,79 @@ function cancelToOrigin() {
   deselect();
 }
 
-function checkGameOver(): boolean {
-  if (alive("enemy").length === 0) {
-    phase = "over";
-    hideMenu();
-    banner(stage.winText, 60000);
-    return true;
+// ── 승패 판정 (시나리오 목표별) ────────────────────────────────
+
+function isExit(exits: [number, number][], x: number, y: number): boolean {
+  return exits.some(([ex, ey]) => ex === x && ey === y);
+}
+
+const zhaoyun = () => units.find((u) => u.id === "zhaoyun");
+
+function checkStageEnd(): boolean {
+  if (stageResult) return true;
+  const g = stage.goal;
+
+  // 공통 패배: 조운 사망 / 아군 전멸
+  const zy = zhaoyun();
+  if ((zy && zy.hp <= 0) || alive("player").length === 0) {
+    return endStage(false);
   }
-  if (alive("player").length === 0) {
-    phase = "over";
-    hideMenu();
-    banner(stage.loseText, 60000);
-    return true;
+
+  // 공통 승리: 적 전멸
+  if (alive("enemy").length === 0) return endStage(true);
+
+  if (g.type === "escort") {
+    const u = units.find((v) => v.id === g.unitId);
+    if (u && u.hp > 0 && isExit(g.exits, u.x, u.y)) return endStage(true);
+  } else if (g.type === "capture") {
+    const occupant = unitAt(g.cell[0], g.cell[1]);
+    if (occupant?.side === "player") return endStage(true);
+  } else if (g.type === "retreat") {
+    const fielded = alive("player");
+    const escapedZy = units.find((v) => v.id === "zhaoyun")?.escaped;
+    if (fielded.length === 0 && escapedZy) return endStage(true);
   }
   return false;
 }
 
-/** 쌓인 경험치로 레벨업 처리 (아군 전원) */
+/** 퇴각전: 출구에 도착한 아군은 전장을 벗어난다 */
+function processEscape(u: Unit) {
+  const g = stage.goal;
+  if (g.type !== "retreat" || u.side !== "player") return;
+  if (isExit(g.exits, u.x, u.y)) {
+    u.escaped = true;
+    addFloat(u.x, u.y, `${u.name} 퇴각!`, "#8fd0ff");
+  }
+}
+
+function endStage(win: boolean): boolean {
+  phase = "over";
+  stageResult = win ? "win" : "lose";
+  hideMenu();
+  void scene3d.releaseFocus(0.4);
+  void (async () => {
+    await banner(win ? stage.winText : stage.loseText, 2600);
+    if (win) {
+      // 생존 영웅 상태 저장 (전사한 영웅은 다음 장에서 이전 상태로 복귀)
+      for (const u of units) {
+        if (u.side === "player" && u.hp > 0) saveHero(u);
+      }
+      if (stageIndex + 1 < CAMPAIGN.length) {
+        await banner("… 다음 장으로 …", 1400);
+        loadStage(stageIndex + 1);
+      } else {
+        stageResult = "clear";
+        bannerHold("🏆 조운전 完 — 모든 시나리오를 클리어했습니다!\n(클릭하면 처음부터 다시)");
+      }
+    } else {
+      bannerHold("패배 — 화면을 클릭하면 이 장을 다시 시작합니다");
+    }
+  })();
+  return true;
+}
+
+// ── 레벨업 ─────────────────────────────────────────────────────
+
 function processLevelUps() {
   for (const u of alive("player")) {
     while (u.exp >= EXP_MAX) {
@@ -248,14 +361,16 @@ function processLevelUps() {
 
 function finishAction(u: Unit) {
   u.acted = true;
+  processEscape(u);
   processLevelUps();
   deselect();
-  showInfo(u);
-  if (checkGameOver()) return;
-  if (alive("player").every((p) => p.acted)) startEnemyPhase();
+  if (!u.escaped) showInfo(u);
+  if (checkStageEnd()) return;
+  if (alive("player").every((p) => p.acted)) void startEnemyPhase();
 }
 
-/** 무기 사거리 내 적 칸 집합 */
+// ── 범위 계산 ──────────────────────────────────────────────────
+
 function enemiesInWeaponRange(u: Unit): Set<string> {
   const out = new Set<string>();
   for (const c of attackCells(stage, u.x, u.y, JOBS[u.job].range)) {
@@ -265,7 +380,6 @@ function enemiesInWeaponRange(u: Unit): Set<string> {
   return out;
 }
 
-/** 책략 사거리 내 대상 칸 집합 (damage=적, heal=아군·자신) */
 function spellTargets(u: Unit, spell: Spell): Set<string> {
   const out = new Set<string>();
   for (const c of attackCells(stage, u.x, u.y, spell.range)) {
@@ -278,14 +392,13 @@ function spellTargets(u: Unit, spell: Spell): Set<string> {
   return out;
 }
 
-/** dist칸 이내의 적 유닛 목록 */
 function enemiesWithin(u: Unit, dist: number): Unit[] {
   return alive(u.side === "player" ? "enemy" : "player").filter(
     (t) => manhattan(t, u) <= dist
   );
 }
 
-// ── 메인 행동 메뉴 구성 ────────────────────────────────────────
+// ── 행동 메뉴 구성 ─────────────────────────────────────────────
 
 function openActionMenu(u: Unit) {
   mode = "menu";
@@ -398,17 +511,16 @@ function openItemMenu(u: Unit) {
   showMenu(u, entries);
 }
 
-// ── 필살기 실행 ────────────────────────────────────────────────
+// ── 필살기 ─────────────────────────────────────────────────────
 
 async function doUltimate(u: Unit, ult: Ultimate, target: Unit | null) {
   mode = "busy";
   targetCells = null;
   u.rage = 0;
-  await scene3d.focusOn(u.x, u.y, 2.2, 0.45); // 다이나믹 캠: 시전자 줌인
+  await scene3d.focusOn(u.x, u.y, 2.2, 0.45);
   await banner(`⚡ ${ult.name} ⚡`, 800);
 
   if (ult.kind === "buff") {
-    // 패왕령: 3칸 내 아군 (자신 포함) 공격력 버프
     const allies = alive(u.side).filter((a) => manhattan(a, u) <= 3);
     for (const a of allies) {
       a.buff = { pct: 0.3, turns: 2 };
@@ -416,18 +528,16 @@ async function doUltimate(u: Unit, ult: Ultimate, target: Unit | null) {
       await sleep(120);
     }
   } else if (ult.kind === "strike" && target) {
-    // 귀신참: 지형 무시 250% 일격
     await scene3d.attackAnim(u, target, 1.5);
-    const hit = ultimateStrike(stage, u, target, 2.5, true, units);
+    const hit = ultimateStrike(stage, u, target, 2.8, true, units);
     addFloat(target.x, target.y, `-${hit.damage}!!`, "#ffd24d");
     if (hit.killed) addFloat(target.x, target.y, "격파!", "#ff8080");
   } else if (ult.kind === "volley") {
-    // 천리연사: 3칸 내 모든 적에게 화살 세례
     const targets = enemiesWithin(u, 3);
     if (targets.length > 0) {
       await scene3d.attackAnim(u, targets[0], 1.2);
       for (const t of targets) {
-        const hit = ultimateStrike(stage, u, t, 0.8, false, units);
+        const hit = ultimateStrike(stage, u, t, 0.9, false, units);
         addFloat(t.x, t.y, `-${hit.damage}`, "#ffd24d");
         if (hit.killed) addFloat(t.x, t.y, "격파!", "#ff8080");
         await sleep(180);
@@ -445,7 +555,6 @@ async function doUltimate(u: Unit, ult: Ultimate, target: Unit | null) {
 async function doAttack(attacker: Unit, defender: Unit) {
   mode = "busy";
   targetCells = null;
-  // 다이나믹 캠: 교전 지점 줌인
   await scene3d.focusOn(
     (attacker.x + defender.x) / 2,
     (attacker.y + defender.y) / 2,
@@ -461,7 +570,7 @@ async function doAttack(attacker: Unit, defender: Unit) {
       await scene3d.attackAnim(defender, attacker);
     } else if (!first) {
       await sleep(250);
-      await scene3d.attackAnim(attacker, defender); // 연사 등 추가 타격
+      await scene3d.attackAnim(attacker, defender);
     }
     first = false;
     const striker = h.counter ? defender : attacker;
@@ -501,151 +610,7 @@ async function doSpell(caster: Unit, spell: Spell, target: Unit) {
   finishAction(caster);
 }
 
-// ── 플레이어 입력 ──────────────────────────────────────────────
-
-scene3d.domElement.addEventListener("click", (e) => {
-  if (scene3d.consumeDrag()) return; // 드래그로 화면을 움직인 경우 선택 무시
-  if (phase !== "player" || mode === "busy") return;
-  const cell = scene3d.pick(e);
-  if (!cell) return;
-  const { x, y } = cell;
-  cursor = { x, y };
-  const clicked = unitAt(x, y);
-
-  switch (mode) {
-    case "idle": {
-      if (clicked) {
-        showInfo(clicked);
-        if (clicked.side === "player" && !clicked.acted) {
-          selected = clicked;
-          origin = { x: clicked.x, y: clicked.y };
-          moveRange = movementRange(stage, units, clicked);
-          mode = "moveSelect";
-        }
-      } else {
-        showInfo(null, x, y);
-      }
-      return;
-    }
-
-    case "moveSelect": {
-      if (!selected) return;
-      if (clicked === selected) {
-        openActionMenu(selected); // 제자리에서 행동
-        return;
-      }
-      if (moveRange?.has(key(x, y)) && !clicked) {
-        selected.x = x;
-        selected.y = y;
-        showInfo(selected);
-        openActionMenu(selected);
-        return;
-      }
-      deselect();
-      if (clicked) showInfo(clicked);
-      return;
-    }
-
-    case "menu": {
-      // 메뉴 밖 클릭 → 이동 취소
-      cancelToOrigin();
-      return;
-    }
-
-    case "attackSelect": {
-      if (!selected) return;
-      const target = unitAt(x, y);
-      if (target && targetCells?.has(key(x, y))) {
-        void doAttack(selected, target);
-      } else {
-        openActionMenu(selected); // 대상 아닌 곳 클릭 → 메뉴로 복귀
-      }
-      return;
-    }
-
-    case "spellSelect": {
-      if (!selected || !pendingSpell) return;
-      const target = unitAt(x, y);
-      if (target && targetCells?.has(key(x, y))) {
-        void doSpell(selected, pendingSpell, target);
-      } else {
-        pendingSpell = null;
-        openActionMenu(selected);
-      }
-      return;
-    }
-
-    case "ultSelect": {
-      if (!selected || !pendingUlt) return;
-      const target = unitAt(x, y);
-      if (target && targetCells?.has(key(x, y))) {
-        const ult = pendingUlt;
-        pendingUlt = null;
-        void doUltimate(selected, ult, target);
-      } else {
-        pendingUlt = null;
-        openActionMenu(selected);
-      }
-      return;
-    }
-  }
-});
-
-// 우클릭 = 전체 취소 (이동 전 위치로 복귀)
-scene3d.domElement.addEventListener("contextmenu", (e) => {
-  e.preventDefault();
-  if (phase !== "player" || mode === "busy" || !selected) return;
-  cancelToOrigin();
-});
-
-// 명중률 미리보기: 책략 대상 위에 마우스를 올리면 정보 패널에 표시
-scene3d.domElement.addEventListener("mousemove", (e) => {
-  if (mode !== "spellSelect" || !selected || !pendingSpell) return;
-  const cell = scene3d.pick(e);
-  if (!cell) return;
-  const t = unitAt(cell.x, cell.y);
-  if (t && targetCells?.has(key(cell.x, cell.y)) && pendingSpell.kind === "damage") {
-    infoEl.innerHTML = `<b>${pendingSpell.name}</b> → ${t.name} ·
-      명중률 <b>${spellHitChance(selected, t)}%</b> ·
-      예상 위력 ≈ ${Math.max(1, Math.round(selected.int * pendingSpell.power - t.int * 0.5))}`;
-  }
-});
-
-endTurnBtn.addEventListener("click", () => {
-  if (phase !== "player" || mode === "busy") return;
-  for (const u of alive("player")) u.acted = true;
-  startEnemyPhase();
-});
-
-// ── ESC: 선택 취소 / 설정 창 ──────────────────────────────────
-
-const settingsEl = document.getElementById("settings")!;
-
-function toggleSettings(open: boolean) {
-  settingsEl.hidden = !open;
-}
-
-document.getElementById("settings-close")!.addEventListener("click", () => toggleSettings(false));
-settingsEl.addEventListener("click", (e) => {
-  if (e.target === settingsEl) toggleSettings(false); // 바깥 클릭으로 닫기
-});
-
-window.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if (!settingsEl.hidden) {
-    toggleSettings(false);
-    return;
-  }
-  if (phase === "player" && mode !== "busy" && mode !== "idle") {
-    cancelToOrigin(); // 뭔가 선택 중이면 먼저 취소
-    return;
-  }
-  toggleSettings(true);
-});
-
 // ── 적 AI ──────────────────────────────────────────────────────
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function startEnemyPhase() {
   phase = "enemy";
@@ -654,28 +619,42 @@ async function startEnemyPhase() {
 
   for (const e of alive("enemy")) {
     if (phase !== "enemy") return;
-    await scene3d.focusOn(e.x, e.y, 1.45, 0.4); // 다이나믹 캠: 행동하는 적 추적
+    await scene3d.focusOn(e.x, e.y, 1.45, 0.4);
     await enemyAct(e);
-    processLevelUps(); // 반격으로 얻은 경험치
+    processLevelUps();
     await sleep(350);
-    if (checkGameOver()) {
-      void scene3d.releaseFocus();
-      return;
-    }
+    if (checkStageEnd()) return;
   }
   await scene3d.releaseFocus();
 
   turn++;
   for (const u of units) {
     u.acted = false;
-    // 버프 지속시간 감소
     if (u.buff && --u.buff.turns <= 0) {
       if (u.hp > 0) addFloat(u.x, u.y, "버프 종료", "#9aa3b5");
       delete u.buff;
     }
   }
+
+  // 방어전: 버텨낸 턴 수 달성 → 승리
+  if (stage.goal.type === "defend" && turn > stage.goal.turns) {
+    endStage(true);
+    return;
+  }
+  // 퇴각전: 제한 턴 초과 → 패배
+  if (stage.goal.type === "retreat" && turn > stage.goal.turnLimit) {
+    endStage(false);
+    return;
+  }
+
   phase = "player";
-  await banner(`${turn}턴 아군 페이즈`);
+  const limit =
+    stage.goal.type === "defend"
+      ? ` / ${stage.goal.turns}`
+      : stage.goal.type === "retreat"
+        ? ` / ${stage.goal.turnLimit}`
+        : "";
+  await banner(`${turn}턴${limit} 아군 페이즈`);
 }
 
 async function enemyAct(e: Unit) {
@@ -688,7 +667,7 @@ async function enemyAct(e: Unit) {
     return !unitAt(cx, cy) || (cx === e.x && cy === e.y);
   };
 
-  // 1) 책략 우선 (도사): 이동 후 책략이 닿는 가장 약한 대상
+  // 1) 책략 우선
   const spell = e.spells.map((id) => SPELLS[id]).find((s) => e.mp >= s.mp);
   if (spell && spell.kind === "damage") {
     let best: { cell: string; target: Unit } | null = null;
@@ -720,7 +699,7 @@ async function enemyAct(e: Unit) {
     }
   }
 
-  // 2) 물리 공격: 이동 범위 내에서 가장 약한 대상
+  // 2) 물리 공격
   let best: { cell: string; target: Unit } | null = null;
   for (const cell of range.keys()) {
     if (!reachable(cell)) continue;
@@ -762,7 +741,7 @@ async function enemyAct(e: Unit) {
     return;
   }
 
-  // 3) 접근: 가장 가까운 아군 쪽으로 이동
+  // 3) 접근
   let nearest = players[0];
   for (const p of players) {
     if (manhattan(p, e) < manhattan(nearest, e)) nearest = p;
@@ -785,18 +764,174 @@ async function enemyAct(e: Unit) {
   }
 }
 
-// ── 메인 루프 ──────────────────────────────────────────────────
+// ── 입력 연결 (스테이지마다 새 캔버스에 다시 연결) ─────────────
+
+function wireSceneInput() {
+  scene3d.domElement.addEventListener("click", (e) => {
+    if (scene3d.consumeDrag()) return;
+
+    // 결과 화면 클릭: 재도전 / 처음부터
+    if (phase === "over") {
+      if (stageResult === "lose") {
+        bannerEl.classList.remove("show");
+        heroState.clear();
+        for (const [id, s] of entrySnapshot) heroState.set(id, { ...s, items: [...s.items] });
+        loadStage(stageIndex);
+      } else if (stageResult === "clear") {
+        bannerEl.classList.remove("show");
+        heroState.clear();
+        loadStage(0);
+      }
+      return;
+    }
+
+    if (phase !== "player" || mode === "busy") return;
+    const cell = scene3d.pick(e);
+    if (!cell) return;
+    const { x, y } = cell;
+    cursor = { x, y };
+    const clicked = unitAt(x, y);
+
+    switch (mode) {
+      case "idle": {
+        if (clicked) {
+          showInfo(clicked);
+          if (clicked.side === "player" && !clicked.acted) {
+            selected = clicked;
+            origin = { x: clicked.x, y: clicked.y };
+            moveRange = movementRange(stage, units, clicked);
+            mode = "moveSelect";
+          }
+        } else {
+          showInfo(null, x, y);
+        }
+        return;
+      }
+      case "moveSelect": {
+        if (!selected) return;
+        if (clicked === selected) {
+          openActionMenu(selected);
+          return;
+        }
+        if (moveRange?.has(key(x, y)) && !clicked) {
+          selected.x = x;
+          selected.y = y;
+          showInfo(selected);
+          openActionMenu(selected);
+          return;
+        }
+        deselect();
+        if (clicked) showInfo(clicked);
+        return;
+      }
+      case "menu": {
+        cancelToOrigin();
+        return;
+      }
+      case "attackSelect": {
+        if (!selected) return;
+        const target = unitAt(x, y);
+        if (target && targetCells?.has(key(x, y))) {
+          void doAttack(selected, target);
+        } else {
+          openActionMenu(selected);
+        }
+        return;
+      }
+      case "spellSelect": {
+        if (!selected || !pendingSpell) return;
+        const target = unitAt(x, y);
+        if (target && targetCells?.has(key(x, y))) {
+          void doSpell(selected, pendingSpell, target);
+        } else {
+          pendingSpell = null;
+          openActionMenu(selected);
+        }
+        return;
+      }
+      case "ultSelect": {
+        if (!selected || !pendingUlt) return;
+        const target = unitAt(x, y);
+        if (target && targetCells?.has(key(x, y))) {
+          const ult = pendingUlt;
+          pendingUlt = null;
+          void doUltimate(selected, ult, target);
+        } else {
+          pendingUlt = null;
+          openActionMenu(selected);
+        }
+        return;
+      }
+    }
+  });
+
+  scene3d.domElement.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    if (phase !== "player" || mode === "busy" || !selected) return;
+    cancelToOrigin();
+  });
+
+  scene3d.domElement.addEventListener("mousemove", (e) => {
+    if (mode !== "spellSelect" || !selected || !pendingSpell) return;
+    const cell = scene3d.pick(e);
+    if (!cell) return;
+    const t = unitAt(cell.x, cell.y);
+    if (t && targetCells?.has(key(cell.x, cell.y)) && pendingSpell.kind === "damage") {
+      infoEl.innerHTML = `<div class="placeholder"><b>${pendingSpell.name}</b> → ${t.name} ·
+        명중률 <b>${spellHitChance(selected, t)}%</b> ·
+        예상 위력 ≈ ${Math.max(1, Math.round(selected.int * pendingSpell.power - t.int * 0.5))}</div>`;
+    }
+  });
+}
+
+// ── 전역 UI (1회 연결) ─────────────────────────────────────────
+
+endTurnBtn.addEventListener("click", () => {
+  if (phase !== "player" || mode === "busy") return;
+  for (const u of alive("player")) u.acted = true;
+  void startEnemyPhase();
+});
+
+const settingsEl = document.getElementById("settings")!;
+function toggleSettings(open: boolean) {
+  settingsEl.hidden = !open;
+}
+document.getElementById("settings-close")!.addEventListener("click", () => toggleSettings(false));
+settingsEl.addEventListener("click", (e) => {
+  if (e.target === settingsEl) toggleSettings(false);
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!settingsEl.hidden) {
+    toggleSettings(false);
+    return;
+  }
+  if (phase === "player" && mode !== "busy" && mode !== "idle") {
+    cancelToOrigin();
+    return;
+  }
+  toggleSettings(true);
+});
+
+// ── 렌더 루프 ──────────────────────────────────────────────────
 
 function frame() {
   const highlights: Highlight[] = [];
   if (moveRange)
-    highlights.push({
-      cells: new Set(moveRange.keys()),
-      color: 0x5096ff,
-      opacity: 0.45,
-    });
-  if (targetCells)
-    highlights.push({ cells: targetCells, ...targetStyle });
+    highlights.push({ cells: new Set(moveRange.keys()), color: 0x5096ff, opacity: 0.45 });
+  if (targetCells) highlights.push({ cells: targetCells, ...targetStyle });
+
+  // 목표 지점 표시 (출구·점령지)
+  const g = stage.goal;
+  const goalCells = new Set<string>();
+  if (g.type === "escort" || g.type === "retreat") {
+    for (const [ex, ey] of g.exits) goalCells.add(key(ex, ey));
+  } else if (g.type === "capture") {
+    goalCells.add(key(g.cell[0], g.cell[1]));
+  }
+  if (goalCells.size > 0)
+    highlights.push({ cells: goalCells, color: 0x8fd0ff, opacity: 0.35 });
+
   scene3d.setHighlights(highlights);
   scene3d.setCursor(cursor);
   scene3d.syncUnits(units, selected);
@@ -804,35 +939,75 @@ function frame() {
   requestAnimationFrame(frame);
 }
 
-document.getElementById("stage-name")!.textContent = stage.name;
+// ── 스테이지 로드 ──────────────────────────────────────────────
+
+function loadStage(idx: number) {
+  stageIndex = idx;
+  stage = CAMPAIGN[idx];
+  stageResult = null;
+  turn = 1;
+  phase = "player";
+  deselect();
+  cursor = null;
+
+  // 재도전용 스냅샷
+  entrySnapshot = new Map();
+  for (const [id, s] of heroState) entrySnapshot.set(id, { ...s, items: [...s.items] });
+
+  // 유닛 구성: 영웅(계승) + 적군
+  units = [
+    ...stage.heroSpawns.map((h) => makeHeroUnit(h.id, h.x, h.y)),
+    ...stage.units.map((u) => ({
+      ...u,
+      spells: [...u.spells],
+      items: [...u.items],
+      hp: u.maxHp,
+      mp: u.maxMp,
+      acted: false,
+      rage: 0,
+      level: u.level ?? 1,
+      exp: 0,
+    })),
+  ];
+
+  // 씬 재구성
+  if (scene3d) scene3d.dispose();
+  scene3d = new Scene3D(wrap, stage);
+  wireSceneInput();
+
+  document.getElementById("stage-name")!.textContent = `${stage.name} · ${stage.subtitle}`;
+  showInfo(null);
+
+  void (async () => {
+    for (const line of stage.intro) await banner(line, 2000);
+    await banner(`🎯 ${stage.goalText}`, 2600);
+    await banner(`1턴 아군 페이즈`, 1100);
+  })();
+}
+
+// ── 시작 ───────────────────────────────────────────────────────
+
 (async () => {
-  // GLTF 병사 모델 프리로드 (실패해도 절차 모델로 진행)
   bannerEl.textContent = "부대 편성 중…";
   bannerEl.classList.add("show");
   const assetsReady = loadAssets().catch(() => {});
   await Promise.race([assetsReady, sleep(8000)]);
   bannerEl.classList.remove("show");
-  banner(`${stage.name}\n1턴 아군 페이즈`, 1500);
+
+  loadStage(0);
   frame();
-  // 타임아웃 뒤 늦게 도착한 에셋도 반영 (뷰·데코 재구성)
+
   void assetsReady.then(() => {
     scene3d.invalidateViews();
     scene3d.refreshDecor();
   });
+
+  // 디버그: ?stage=N / ?zoom= / ?select / ?settings
+  const q = new URLSearchParams(location.search);
+  const st = q.get("stage");
+  if (st) loadStage(Math.max(0, Math.min(CAMPAIGN.length - 1, Number(st))));
+  if (q.has("select")) showInfo(units[0]);
+  if (q.has("settings")) toggleSettings(true);
+  const zm = q.get("zoom");
+  if (zm) scene3d.setView(Number(zm), Number(q.get("px") ?? 0), Number(q.get("pz") ?? 0));
 })();
-
-// 디버그: ?select=조조 정보 카드 / ?settings=설정 모달 / ?zoom=배율
-if (location.search.includes("select")) showInfo(units[0]);
-if (location.search.includes("settings")) toggleSettings(true);
-{
-  const zm = new URLSearchParams(location.search).get("zoom");
-  if (zm) scene3d.setView(Number(zm), Number(new URLSearchParams(location.search).get("px") ?? 0), Number(new URLSearchParams(location.search).get("pz") ?? 0));
-}
-
-// 디버그: ?portraits 로 접속하면 전 유닛 초상화 확인
-if (location.search.includes("portraits")) {
-  const strip = document.createElement("div");
-  strip.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;padding:12px;";
-  for (const u of units) strip.appendChild(getPortrait(u)); // 캐시 공유라 중복 유닛은 한 번만 표시됨
-  document.body.prepend(strip);
-}

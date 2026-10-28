@@ -70,8 +70,14 @@ function calcHit(
   const guard = terrainGuard(terrainAt(stage, defender.x, defender.y));
   const base = attacker.atk * aff * guard - defender.def;
   const { mult, tags } = traitBonus(attacker, allUnits);
+  // 일신시담: HP 50% 이하의 방어자는 받는 피해 -30%
+  const dauntless =
+    defender.trait === "dauntless" && defender.hp / defender.maxHp <= 0.5 ? 0.7 : 1;
   const variance = 0.9 + Math.random() * 0.2;
-  return { damage: Math.max(1, Math.round(base * mult * scale * variance)), tags };
+  return {
+    damage: Math.max(1, Math.round(base * mult * scale * dauntless * variance)),
+    tags,
+  };
 }
 
 /**

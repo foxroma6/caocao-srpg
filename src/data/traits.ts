@@ -28,4 +28,9 @@ export const TRAITS: Record<string, Trait> = {
     name: "태평도 광신",
     desc: "책략 위력 +20%",
   },
+  dauntless: {
+    id: "dauntless",
+    name: "일신시담(一身是膽)",
+    desc: "HP 50% 이하일 때 받는 피해 -30%",
+  },
 };

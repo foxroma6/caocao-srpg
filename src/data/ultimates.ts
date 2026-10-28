@@ -11,6 +11,18 @@ export interface Ultimate {
 
 /** unit.id → 필살기 */
 export const ULTIMATES: Record<string, Ultimate> = {
+  zhaoyun: {
+    id: "zhaoyun",
+    name: "용담돌격(龍膽突擊)",
+    desc: "적 하나에게 지형을 무시하는 280% 위력의 창격",
+    kind: "strike",
+  },
+  huangzhong: {
+    id: "huangzhong",
+    name: "백보천양(百步穿楊)",
+    desc: "3칸 이내 모든 적에게 90% 위력의 신궁 일제사",
+    kind: "volley",
+  },
   caocao: {
     id: "caocao",
     name: "패왕령(覇王令)",

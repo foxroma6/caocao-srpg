@@ -389,16 +389,29 @@ export class Scene3D {
     el.addEventListener("pointercancel", endDrag);
     el.addEventListener("auxclick", (e) => e.preventDefault());
 
-    // 키보드: WASD / 방향키 팬, Home = 초기화
-    window.addEventListener("keydown", (e) => {
+    // 키보드: WASD / 방향키 팬, Home = 초기화 (dispose 시 해제)
+    this.onKeyDown = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
         this.keysDown.add(k);
         e.preventDefault();
       }
       if (k === "home") this.resetCamera();
-    });
-    window.addEventListener("keyup", (e) => this.keysDown.delete(e.key.toLowerCase()));
+    };
+    this.onKeyUp = (e: KeyboardEvent) => this.keysDown.delete(e.key.toLowerCase());
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+  }
+
+  private onKeyDown: ((e: KeyboardEvent) => void) | null = null;
+  private onKeyUp: ((e: KeyboardEvent) => void) | null = null;
+
+  /** 스테이지 전환 시 자원·리스너 정리 */
+  dispose() {
+    if (this.onKeyDown) window.removeEventListener("keydown", this.onKeyDown);
+    if (this.onKeyUp) window.removeEventListener("keyup", this.onKeyUp);
+    this.renderer.dispose();
+    this.domElement.remove();
   }
 
   private updateKeyPan(dt: number) {
@@ -919,8 +932,8 @@ export class Scene3D {
     const ratio = Math.max(0, u.hp / u.maxHp);
     ctx.fillStyle = ratio > 0.4 ? "#4ddb66" : "#ffb347";
     ctx.fillRect(2, 3, 60 * ratio, 4);
-    // 영웅 기력 게이지 (필살기)
-    if (ULTIMATES[u.id]) {
+    // 영웅 기력 게이지 (필살기 — 아군 전용)
+    if (ULTIMATES[u.id] && u.side === "player") {
       ctx.fillStyle = u.rage >= RAGE_MAX ? "#ffe14d" : "#c8a020";
       ctx.fillRect(2, 8, 60 * (u.rage / RAGE_MAX), 2);
     }
@@ -1006,6 +1019,13 @@ export class Scene3D {
       if (!view) {
         view = this.buildView(u);
         this.views.set(u.id, view);
+      }
+
+      // ── 퇴각(탈출) 처리: 연출 없이 전장에서 제거 ──
+      if (u.escaped) {
+        view.root.visible = false;
+        view.status = "dead";
+        continue;
       }
 
       // ── 사망 처리 ──

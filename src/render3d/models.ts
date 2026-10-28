@@ -444,6 +444,63 @@ function buildXiahouyuan(): THREE.Group {
   return g;
 }
 
+/** 조운: 백은빛 갑주 + 푸른 망토, 백마, 긴 은창 — 상산의 조자룡 */
+function buildZhaoyun(): THREE.Group {
+  const g = new THREE.Group();
+  const pal: Palette = { armor: 0xe8ecf4, armorDark: 0x3d6ad4, pants: 0x2a3a5c };
+  buildHorse(g, 0xf2f2ee, 0xcfd2d8, 0x3d6ad4); // 백마 + 푸른 안장
+
+  // 푸른 망토
+  const cape = mesh(new THREE.BoxGeometry(0.045, 0.28, 0.2), 0x2d5ac8);
+  cape.rotation.z = 0.25;
+  cape.position.set(-0.13, 0.48, 0);
+  g.add(cape);
+
+  const hy = riderBase(g, pal);
+  addChestPlate(g, 0.56, 0x3d6ad4); // 푸른 흉갑 트림
+  addShoulderPads(g, 0.64, 0xcfd2d8, 0.05); // 은빛 견갑
+  // 은빛 투구 + 흰 술
+  const helm = mesh(new THREE.ConeGeometry(0.095, 0.12, 7), 0xd8dde8);
+  helm.position.y = hy + 0.08;
+  g.add(helm);
+  const plume = mesh(new THREE.ConeGeometry(0.024, 0.1, 5), 0xf4f4f0);
+  plume.position.y = hy + 0.18;
+  g.add(plume);
+  // 긴 은창
+  const shaft = mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.85, 5), 0xb8bec8);
+  shaft.position.set(0.16, 0.56, 0.13);
+  g.add(shaft);
+  const tip = mesh(new THREE.ConeGeometry(0.032, 0.12, 5), 0xeef2f8);
+  tip.position.set(0.16, 1.04, 0.13);
+  g.add(tip);
+  const tassel = mesh(new THREE.ConeGeometry(0.026, 0.08, 5), 0x3d6ad4); // 푸른 술
+  tassel.rotation.x = Math.PI;
+  tassel.position.set(0.16, 0.94, 0.13);
+  g.add(tassel);
+  return g;
+}
+
+/** 황충: 백발백염의 노장 궁기병 */
+function buildHuangzhong(): THREE.Group {
+  const g = new THREE.Group();
+  const pal: Palette = { armor: 0x3d6ad4, armorDark: 0x2a4ba0, pants: 0x2a3350 };
+  buildHorse(g, 0x8a6a46, 0x6a4e32, 0xd8dde8);
+  const hy = riderBase(g, pal);
+  addChestPlate(g, 0.56, 0xcfd2d8);
+  addBeard(g, hy, "long", 0xe8e6e0); // 긴 백염
+  // 은빛 투구
+  const helm = mesh(new THREE.ConeGeometry(0.095, 0.11, 7), 0xd8dde8);
+  helm.position.y = hy + 0.075;
+  g.add(helm);
+  addBow(g, 0.18, 0.6, 0.13, true);
+  // 화살통
+  const quiver = mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.2, 6), 0x5a4026);
+  quiver.rotation.z = 0.5;
+  quiver.position.set(-0.15, 0.58, -0.05);
+  g.add(quiver);
+  return g;
+}
+
 // ── 직업 기본 모델 (이름 없는 병사) ─────────────────────────────
 
 function buildFoot(kind: SpriteKind, pal: Palette): THREE.Group {
@@ -506,6 +563,8 @@ const CHARACTER_BUILDERS: Record<string, () => THREE.Group> = {
   caocao: buildCaocao,
   xiahoudun: buildXiahoudun,
   xiahouyuan: buildXiahouyuan,
+  zhaoyun: buildZhaoyun,
+  huangzhong: buildHuangzhong,
 };
 
 /** 전용 모델이 있는 캐릭터 (GLTF로 대체하지 않는다) */
