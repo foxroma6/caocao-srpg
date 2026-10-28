@@ -114,7 +114,8 @@ let origin: { x: number; y: number } | null = null;
 let cursor: { x: number; y: number } | null = null;
 
 const wrap = document.getElementById("wrap")!;
-const infoEl = document.getElementById("info")!;
+const statusEl = document.getElementById("status")!;
+const profileEl = document.getElementById("profile")!;
 const bannerEl = document.getElementById("banner")!;
 const menuEl = document.getElementById("menu")!;
 const endTurnBtn = document.getElementById("end-turn") as HTMLButtonElement;
@@ -151,15 +152,34 @@ function barHtml(label: string, val: number, max: number, cls: string): string {
     <span>${val}/${max}</span></div>`;
 }
 
-function showInfo(u: Unit | null, x?: number, y?: number) {
-  if (!u) {
-    infoEl.innerHTML = `<div class="placeholder">${
-      x !== undefined && y !== undefined
-        ? `지형 — <b>${TERRAIN_LABEL[terrainAt(stage, x, y)]}</b>`
-        : `🎯 ${stage.goalText}`
-    }</div>`;
-    return;
-  }
+function setStatus(html: string) {
+  statusEl.innerHTML = html;
+}
+
+let profileUnit: Unit | null = null;
+
+function clearProfile() {
+  profileUnit = null;
+  profileEl.hidden = true;
+}
+
+/** 프로필 카드를 유닛 왼쪽에 배치 (왼쪽 공간이 없으면 오른쪽) */
+function positionProfile() {
+  if (!profileUnit || profileUnit.hp <= 0 || profileUnit.escaped) return;
+  const { px, py } = scene3d.project(profileUnit.x, profileUnit.y);
+  const rect = scene3d.domElement.getBoundingClientRect();
+  const w = profileEl.offsetWidth;
+  const h = profileEl.offsetHeight;
+  let left = px - w - 34;
+  if (left < 8) left = px + 34; // 왼쪽 공간 부족 → 오른쪽
+  let top = py - h / 2;
+  top = Math.max(8, Math.min(rect.height - h - 8, top));
+  left = Math.max(8, Math.min(rect.width - w - 8, left));
+  profileEl.style.left = `${left}px`;
+  profileEl.style.top = `${top}px`;
+}
+
+function showProfile(u: Unit) {
   const job = JOBS[u.job];
   const fac = factionOf(u.faction);
   const ult = u.side === "player" ? ULTIMATES[u.id] : undefined;
@@ -167,47 +187,66 @@ function showInfo(u: Unit | null, x?: number, y?: number) {
   const itemNames = u.items.map((i) => ITEMS[i].name).join(" · ") || "없음";
   const rangeStr = job.range[0] === job.range[1] ? `${job.range[0]}` : job.range.join("~");
 
-  infoEl.innerHTML = `
-    <div class="pwrap"><div class="fchip" style="--fc:${fac.colorCss}">${fac.hanja} ${fac.name}</div></div>
-    <div class="ptext">
+  profileEl.innerHTML = `
+    <div class="top">
+      <div class="pwrap"><div class="fchip" style="--fc:${fac.colorCss}">${fac.hanja} ${fac.name}</div></div>
       <div class="hd">
-        <span class="ulv">Lv.${u.level}</span>
-        <span class="uname">${u.name}</span>
-        <span class="ujob">${job.name}</span>
-        <span class="usub">${CATEGORY_LABEL[job.category]} · 사거리 ${rangeStr} · 이동 ${u.mov}</span>
+        <div class="nameline">
+          <span class="ulv">Lv.${u.level}</span>
+          <span class="uname">${u.name}</span>
+          <span class="ujob">${job.name}</span>
+        </div>
+        <span class="usub">${CATEGORY_LABEL[job.category]} · 사거리 ${rangeStr} · 이동 ${u.mov}
+          · ${TERRAIN_LABEL[terrainAt(stage, u.x, u.y)]}</span>
         ${
           u.buff && u.buff.turns > 0
             ? `<span class="buffchip">공 +${Math.round(u.buff.pct * 100)}% · ${u.buff.turns}턴</span>`
             : ""
         }
       </div>
-      <div class="bars">
-        ${barHtml("HP", u.hp, u.maxHp, "hp")}
-        ${u.maxMp > 0 ? barHtml("MP", u.mp, u.maxMp, "mp") : ""}
-        ${ult ? barHtml("기력", u.rage, RAGE_MAX, "rage") : ""}
-        ${u.side === "player" ? barHtml("EXP", u.exp, EXP_MAX, "exp") : ""}
-      </div>
-      <div class="statrow">
-        <span class="st"><em>공격</em>${u.atk}</span>
-        <span class="st"><em>방어</em>${u.def}</span>
-        <span class="st"><em>지력</em>${u.int}</span>
-        <span class="st"><em>지형</em>${TERRAIN_LABEL[terrainAt(stage, u.x, u.y)]}</span>
-      </div>
-      ${
-        u.trait
-          ? `<div class="skill"><b class="trait">★ ${TRAITS[u.trait].name}</b>
-             <span class="d">${TRAITS[u.trait].desc}</span></div>`
-          : ""
-      }
-      ${
-        ult
-          ? `<div class="skill"><b class="ult">⚡ ${ult.name}</b>
-             <span class="d">${ult.desc}</span></div>`
-          : ""
-      }
-      <div class="util">책략: ${spellNames} &nbsp;·&nbsp; 소지품: ${itemNames}</div>
-    </div>`;
-  infoEl.querySelector(".pwrap")!.prepend(getPortrait(u));
+    </div>
+    <div class="bars">
+      ${barHtml("HP", u.hp, u.maxHp, "hp")}
+      ${u.maxMp > 0 ? barHtml("MP", u.mp, u.maxMp, "mp") : ""}
+      ${ult ? barHtml("기력", u.rage, RAGE_MAX, "rage") : ""}
+      ${u.side === "player" ? barHtml("EXP", u.exp, EXP_MAX, "exp") : ""}
+    </div>
+    <div class="statrow">
+      <span class="st"><em>공격</em>${u.atk}</span>
+      <span class="st"><em>방어</em>${u.def}</span>
+      <span class="st"><em>지력</em>${u.int}</span>
+    </div>
+    ${
+      u.trait
+        ? `<div class="skill"><b class="trait">★ ${TRAITS[u.trait].name}</b>
+           <span class="d">${TRAITS[u.trait].desc}</span></div>`
+        : ""
+    }
+    ${
+      ult
+        ? `<div class="skill"><b class="ult">⚡ ${ult.name}</b>
+           <span class="d">${ult.desc}</span></div>`
+        : ""
+    }
+    <div class="util">책략: ${spellNames} &nbsp;·&nbsp; 소지품: ${itemNames}</div>`;
+  profileEl.querySelector(".pwrap")!.prepend(getPortrait(u));
+  profileEl.hidden = false;
+  profileUnit = u;
+  positionProfile();
+}
+
+/** 하위 호환 진입점: 유닛 → 플로팅 프로필 / 지형·기본 → 하단 상태 바 */
+function showInfo(u: Unit | null, x?: number, y?: number) {
+  if (u) {
+    showProfile(u);
+    return;
+  }
+  clearProfile();
+  setStatus(
+    x !== undefined && y !== undefined
+      ? `지형 — <b>${TERRAIN_LABEL[terrainAt(stage, x, y)]}</b>`
+      : `🎯 ${stage.goalText}`
+  );
 }
 
 function addFloat(x: number, y: number, text: string, color: string) {
@@ -264,6 +303,7 @@ function deselect() {
   origin = null;
   mode = "idle";
   hideMenu();
+  setStatus(`🎯 ${stage.goalText}`);
 }
 
 function cancelToOrigin() {
@@ -364,7 +404,8 @@ function finishAction(u: Unit) {
   processEscape(u);
   processLevelUps();
   deselect();
-  if (!u.escaped) showInfo(u);
+  if (u.escaped) clearProfile();
+  else showProfile(u);
   if (checkStageEnd()) return;
   if (alive("player").every((p) => p.acted)) void startEnemyPhase();
 }
@@ -877,9 +918,9 @@ function wireSceneInput() {
     if (!cell) return;
     const t = unitAt(cell.x, cell.y);
     if (t && targetCells?.has(key(cell.x, cell.y)) && pendingSpell.kind === "damage") {
-      infoEl.innerHTML = `<div class="placeholder"><b>${pendingSpell.name}</b> → ${t.name} ·
+      setStatus(`<b>${pendingSpell.name}</b> → ${t.name} ·
         명중률 <b>${spellHitChance(selected, t)}%</b> ·
-        예상 위력 ≈ ${Math.max(1, Math.round(selected.int * pendingSpell.power - t.int * 0.5))}</div>`;
+        예상 위력 ≈ ${Math.max(1, Math.round(selected.int * pendingSpell.power - t.int * 0.5))}`);
     }
   });
 }
@@ -936,6 +977,7 @@ function frame() {
   scene3d.setCursor(cursor);
   scene3d.syncUnits(units, selected);
   scene3d.render();
+  positionProfile(); // 프로필 카드가 유닛·카메라를 따라감
   requestAnimationFrame(frame);
 }
 
@@ -976,7 +1018,8 @@ function loadStage(idx: number) {
   wireSceneInput();
 
   document.getElementById("stage-name")!.textContent = `${stage.name} · ${stage.subtitle}`;
-  showInfo(null);
+  clearProfile();
+  setStatus(`🎯 ${stage.goalText}`);
 
   void (async () => {
     for (const line of stage.intro) await banner(line, 2000);
