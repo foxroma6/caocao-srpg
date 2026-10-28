@@ -28,6 +28,21 @@ const STYLE =
   "no gradients, vivid saturated colors, single character, full body, standing on flat ground";
 
 const HEROES = {
+  zhaoyun: {
+    name: "hero_zhaoyun",
+    prompt:
+      `Handsome heroic cartoon young general Zhao Yun (Zhao Zilong) from Three Kingdoms ` +
+      `riding a white horse, gleaming white and silver armor with royal blue accents, ` +
+      `flowing blue cape, silver helmet with tall white plume, holding a long silver spear ` +
+      `with blue tassel, determined noble expression, clean-shaven young face, ${STYLE}`,
+  },
+  huangzhong: {
+    name: "hero_huangzhong",
+    prompt:
+      `Cool cartoon veteran archer general Huang Zhong from Three Kingdoms riding a brown horse, ` +
+      `long flowing white beard, white and blue armor with silver trim, ` +
+      `drawing a large ornate bow, quiver of arrows on back, fierce proud old warrior expression, ${STYLE}`,
+  },
   caocao: {
     name: "hero_caocao",
     prompt:
