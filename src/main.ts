@@ -1080,12 +1080,9 @@ function loadStage(idx: number) {
 
 // ── 시작 ───────────────────────────────────────────────────────
 
-(async () => {
-  bannerEl.textContent = "부대 편성 중…";
-  bannerEl.classList.add("show");
+(() => {
+  // 대기 화면 없이 즉시 시작 — 고품질 모델은 백그라운드 로드 후 교체 반영
   const assetsReady = loadAssets().catch(() => {});
-  await Promise.race([assetsReady, sleep(8000)]);
-  bannerEl.classList.remove("show");
 
   loadStage(0);
   frame();
@@ -1100,6 +1097,12 @@ function loadStage(idx: number) {
   const st = q.get("stage");
   if (st) loadStage(Math.max(0, Math.min(CAMPAIGN.length - 1, Number(st))));
   if (q.has("select")) showInfo(units[0]);
+  if (q.has("menu")) {
+    // 디버그: 행동 메뉴 미리보기
+    selected = units[0];
+    origin = { x: units[0].x, y: units[0].y };
+    openActionMenu(units[0]);
+  }
   if (q.has("settings")) toggleSettings(true);
   const zm = q.get("zoom");
   if (zm) scene3d.setView(Number(zm), Number(q.get("px") ?? 0), Number(q.get("pz") ?? 0));
